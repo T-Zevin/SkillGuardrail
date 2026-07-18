@@ -1,15 +1,18 @@
 <h1 align="center">SkillGuardrail</h1>
 
-English | [简体中文](README.zh-CN.md)
+<p align="center">
+  English · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-[![Build](https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/T-Zevin/SkillGuardrail?display_name=tag&sort=semver)](https://github.com/T-Zevin/SkillGuardrail/releases)
-[![Downloads](https://img.shields.io/github/downloads/T-Zevin/SkillGuardrail/total)](https://github.com/T-Zevin/SkillGuardrail/releases)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/T-Zevin/SkillGuardrail?logo=go)](go.mod)
-[![License](https://img.shields.io/github/license/T-Zevin/SkillGuardrail)](LICENSE)
-[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-5c6ac4)](#platform-support)
-[![Stars](https://img.shields.io/github/stars/T-Zevin/SkillGuardrail?style=flat)](https://github.com/T-Zevin/SkillGuardrail/stargazers)
-[![Last Commit](https://img.shields.io/github/last-commit/T-Zevin/SkillGuardrail)](https://github.com/T-Zevin/SkillGuardrail/commits/main)
+<p align="center">
+  <a href="https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml"><img alt="Build" src="https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/T-Zevin/SkillGuardrail/releases"><img alt="Release" src="https://img.shields.io/github/v/release/T-Zevin/SkillGuardrail?display_name=tag&amp;sort=semver"></a>
+  <a href="https://github.com/T-Zevin/SkillGuardrail/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/T-Zevin/SkillGuardrail/total"></a>
+  <a href="go.mod"><img alt="Go Version" src="https://img.shields.io/github/go-mod/go-version/T-Zevin/SkillGuardrail?logo=go"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/T-Zevin/SkillGuardrail"></a>
+  <a href="#platform-support"><img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-5c6ac4"></a>
+  <a href="https://github.com/T-Zevin/SkillGuardrail/commits/main"><img alt="Last Commit" src="https://img.shields.io/github/last-commit/T-Zevin/SkillGuardrail"></a>
+</p>
 
 ![SkillGuardrail — security guardrails for Agent Skills](assets/skillguardrail-hero.png)
 

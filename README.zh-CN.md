@@ -1,15 +1,18 @@
 <h1 align="center">SkillGuardrail</h1>
 
-[English](README.md) | 简体中文
+<p align="center">
+  <a href="README.md">English</a> · 简体中文
+</p>
 
-[![构建](https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml)
-[![版本](https://img.shields.io/github/v/release/T-Zevin/SkillGuardrail?display_name=tag&sort=semver)](https://github.com/T-Zevin/SkillGuardrail/releases)
-[![下载量](https://img.shields.io/github/downloads/T-Zevin/SkillGuardrail/total)](https://github.com/T-Zevin/SkillGuardrail/releases)
-[![Go 版本](https://img.shields.io/github/go-mod/go-version/T-Zevin/SkillGuardrail?logo=go)](go.mod)
-[![许可证](https://img.shields.io/github/license/T-Zevin/SkillGuardrail)](LICENSE)
-[![平台](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-5c6ac4)](#平台支持)
-[![Stars](https://img.shields.io/github/stars/T-Zevin/SkillGuardrail?style=flat)](https://github.com/T-Zevin/SkillGuardrail/stargazers)
-[![最近提交](https://img.shields.io/github/last-commit/T-Zevin/SkillGuardrail)](https://github.com/T-Zevin/SkillGuardrail/commits/main)
+<p align="center">
+  <a href="https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml"><img alt="构建" src="https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/T-Zevin/SkillGuardrail/releases"><img alt="版本" src="https://img.shields.io/github/v/release/T-Zevin/SkillGuardrail?display_name=tag&amp;sort=semver"></a>
+  <a href="https://github.com/T-Zevin/SkillGuardrail/releases"><img alt="下载量" src="https://img.shields.io/github/downloads/T-Zevin/SkillGuardrail/total"></a>
+  <a href="go.mod"><img alt="Go 版本" src="https://img.shields.io/github/go-mod/go-version/T-Zevin/SkillGuardrail?logo=go"></a>
+  <a href="LICENSE"><img alt="许可证" src="https://img.shields.io/github/license/T-Zevin/SkillGuardrail"></a>
+  <a href="#平台支持"><img alt="平台" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-5c6ac4"></a>
+  <a href="https://github.com/T-Zevin/SkillGuardrail/commits/main"><img alt="最近提交" src="https://img.shields.io/github/last-commit/T-Zevin/SkillGuardrail"></a>
+</p>
 
 ![SkillGuardrail：Agent Skills 安全护栏](assets/skillguardrail-hero.png)
 
