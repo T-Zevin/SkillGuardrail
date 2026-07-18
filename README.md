@@ -2,10 +2,14 @@
 
 English | [简体中文](README.zh-CN.md)
 
-[![CI](https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml/badge.svg)](https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/T-Zevin/SkillGuardrail?display_name=tag)](https://github.com/T-Zevin/SkillGuardrail/releases)
-[![Go](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go)](go.mod)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Build](https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/T-Zevin/SkillGuardrail?display_name=tag&sort=semver)](https://github.com/T-Zevin/SkillGuardrail/releases)
+[![Downloads](https://img.shields.io/github/downloads/T-Zevin/SkillGuardrail/total)](https://github.com/T-Zevin/SkillGuardrail/releases)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/T-Zevin/SkillGuardrail?logo=go)](go.mod)
+[![License](https://img.shields.io/github/license/T-Zevin/SkillGuardrail)](LICENSE)
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-5c6ac4)](#platform-support)
+[![Stars](https://img.shields.io/github/stars/T-Zevin/SkillGuardrail?style=flat)](https://github.com/T-Zevin/SkillGuardrail/stargazers)
+[![Last Commit](https://img.shields.io/github/last-commit/T-Zevin/SkillGuardrail)](https://github.com/T-Zevin/SkillGuardrail/commits/main)
 
 ![SkillGuardrail — security guardrails for Agent Skills](assets/skillguardrail-hero.png)
 
@@ -17,6 +21,29 @@ It is designed for portable `SKILL.md` packages used with Codex, Claude Code, Cu
 
 > [!IMPORTANT]
 > SkillGuardrail is an early security tool. Static analysis can reduce risk, but it cannot prove that a skill is safe. Review findings, keep agents sandboxed, grant the least privilege possible, and treat unknown publishers as untrusted.
+
+| **Quarantine first** | **Policy, not just scores** | **Verifiable installs** |
+|:---|:---|:---|
+| Inspect untrusted packages without running their code. | Turn findings and capability chains into an enforceable verdict. | Bind installs to source commits, fingerprints, and external receipts. |
+
+## Table of contents
+
+- [Why SkillGuardrail?](#why-skillguardrail)
+- [What it checks](#what-it-checks)
+- [Install](#install)
+  - [Homebrew](#homebrew)
+  - [Go](#go)
+  - [Release binaries](#release-binaries)
+  - [Platform support](#platform-support)
+- [Quick start](#quick-start)
+- [Verdicts](#verdicts)
+- [Exit codes](#exit-codes)
+- [Security model](#security-model)
+- [Automation](#automation)
+- [Project status](#project-status)
+- [Related work](#related-work)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Why SkillGuardrail?
 

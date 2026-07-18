@@ -2,6 +2,15 @@
 
 [English](README.md) | 简体中文
 
+[![构建](https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml)
+[![版本](https://img.shields.io/github/v/release/T-Zevin/SkillGuardrail?display_name=tag&sort=semver)](https://github.com/T-Zevin/SkillGuardrail/releases)
+[![下载量](https://img.shields.io/github/downloads/T-Zevin/SkillGuardrail/total)](https://github.com/T-Zevin/SkillGuardrail/releases)
+[![Go 版本](https://img.shields.io/github/go-mod/go-version/T-Zevin/SkillGuardrail?logo=go)](go.mod)
+[![许可证](https://img.shields.io/github/license/T-Zevin/SkillGuardrail)](LICENSE)
+[![平台](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-5c6ac4)](#平台支持)
+[![Stars](https://img.shields.io/github/stars/T-Zevin/SkillGuardrail?style=flat)](https://github.com/T-Zevin/SkillGuardrail/stargazers)
+[![最近提交](https://img.shields.io/github/last-commit/T-Zevin/SkillGuardrail)](https://github.com/T-Zevin/SkillGuardrail/commits/main)
+
 ![SkillGuardrail：Agent Skills 安全护栏](assets/skillguardrail-hero.png)
 
 **在 Agent 读取之前先扫描，只安装你真正信任的 Skill。**
@@ -9,6 +18,20 @@
 SkillGuardrail 是一个开源的 Agent Skills 安装前安全扫描器和受控安装工具。它把公开 GitHub 包下载到私有隔离区，并把本地目录复制成有资源上限的私有快照；完成确定性静态检查、能力推断和策略判定，得到明确批准后才写入 Codex、Claude Code、Cursor、Gemini CLI 或 OpenClaw 的 Skill 目录。
 
 > SkillGuardrail 只能降低风险，不能证明一个 Skill 绝对安全。请继续使用最小权限、Agent 沙箱和人工复核。
+
+| **先隔离** | **不止打分，更能执行策略** | **安装结果可验证** |
+|:---|:---|:---|
+| 在不运行包内代码的前提下检查不可信 Skill。 | 将风险发现与能力链转化为明确、可执行的判定。 | 用来源 commit、内容指纹和外部 receipt 绑定安装结果。 |
+
+## 目录
+
+- [核心区别](#核心区别)
+- [安装](#安装)
+  - [平台支持](#平台支持)
+- [使用](#使用)
+- [判定与退出码](#判定与退出码)
+- [相关工作](#相关工作)
+- [许可证](#许可证)
 
 ## 核心区别
 
