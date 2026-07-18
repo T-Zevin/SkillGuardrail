@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/T-Zevin/SkillGuardrail/security/advisories/new
+    about: Report vulnerabilities or unpublished scanner evasions privately. Do not open a public issue.

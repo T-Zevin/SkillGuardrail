@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a reproducible defect that is not security-sensitive
+title: "[Bug]: "
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report. If this could expose users to harm or bypass a security boundary, stop and use the private security-report link instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: SkillGuardrail version
+      description: Paste the output of `skillguardrail version`.
+      placeholder: v0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, architecture, and installation method.
+      placeholder: macOS 15 arm64, Homebrew
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include commands and a sanitized fixture. Do not include secrets, private repositories, or live malware.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include escaped text or JSON output when useful.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, tokens, personal data, and private source content.
+          required: true
+        - label: This report does not disclose a vulnerability or unpublished security bypass.
+          required: true

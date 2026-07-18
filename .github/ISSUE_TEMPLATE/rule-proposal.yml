@@ -1,0 +1,59 @@
+name: Detection rule proposal
+description: Propose an explainable signal or false-positive improvement
+title: "[Rule]: "
+labels: [rules, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Public rule proposals must not provide a working exploit that puts current users at risk. Use private vulnerability reporting for unpublished evasions.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Proposal type
+      options:
+        - New detection
+        - False-positive reduction
+        - Severity or confidence change
+        - Capability-chain change
+    validations:
+      required: true
+
+  - type: input
+    id: category
+    attributes:
+      label: Suggested category or rule ID
+      placeholder: prompt-injection / SG-PI-...
+    validations:
+      required: true
+
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Risky behavior
+      description: Explain the behavior and likely impact without supplying live malware.
+    validations:
+      required: true
+
+  - type: textarea
+    id: signal
+    attributes:
+      label: Explainable signal
+      description: What stable structural or behavioral evidence should the user see?
+    validations:
+      required: true
+
+  - type: textarea
+    id: benign
+    attributes:
+      label: Benign near-match
+      description: Describe legitimate content that the rule must not flag.
+    validations:
+      required: true
+
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Link public advisories, standards, or research when available.

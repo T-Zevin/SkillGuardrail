@@ -1,0 +1,8 @@
+# Default review owner
+* @T-Zevin
+
+# Security-sensitive boundaries
+/internal/source/ @T-Zevin
+/internal/install/ @T-Zevin
+/internal/scanner/ @T-Zevin
+/.github/workflows/ @T-Zevin
