@@ -1,4 +1,4 @@
-# SkillGuardrail
+<h1 align="center">SkillGuardrail</h1>
 
 [English](README.md) | 简体中文
 
