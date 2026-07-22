@@ -1,277 +1,175 @@
 <h1 align="center">SkillGuardrail</h1>
 
 <p align="center">
-  English · <a href="README.zh-CN.md">简体中文</a>
+  简体中文 · <a href="README.en.md">English</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml"><img alt="Build" src="https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml/badge.svg?branch=main"></a>
-  <a href="https://github.com/T-Zevin/SkillGuardrail/releases"><img alt="Release" src="https://img.shields.io/github/v/release/T-Zevin/SkillGuardrail?display_name=tag&amp;sort=semver"></a>
-  <a href="https://github.com/T-Zevin/SkillGuardrail/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/T-Zevin/SkillGuardrail/total"></a>
-  <a href="go.mod"><img alt="Go Version" src="https://img.shields.io/github/go-mod/go-version/T-Zevin/SkillGuardrail?logo=go"></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/T-Zevin/SkillGuardrail"></a>
-  <a href="#platform-support"><img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-5c6ac4"></a>
-  <a href="https://github.com/T-Zevin/SkillGuardrail/commits/main"><img alt="Last Commit" src="https://img.shields.io/github/last-commit/T-Zevin/SkillGuardrail"></a>
+  <a href="https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml"><img alt="构建" src="https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/T-Zevin/SkillGuardrail/releases"><img alt="版本" src="https://img.shields.io/github/v/release/T-Zevin/SkillGuardrail?display_name=tag&amp;sort=semver"></a>
+  <a href="https://github.com/T-Zevin/SkillGuardrail/releases"><img alt="下载量" src="https://img.shields.io/github/downloads/T-Zevin/SkillGuardrail/total"></a>
+  <a href="go.mod"><img alt="Go 版本" src="https://img.shields.io/github/go-mod/go-version/T-Zevin/SkillGuardrail?logo=go"></a>
+  <a href="LICENSE"><img alt="许可证" src="https://img.shields.io/github/license/T-Zevin/SkillGuardrail"></a>
+  <a href="#平台支持"><img alt="平台" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-5c6ac4"></a>
+  <a href="https://github.com/T-Zevin/SkillGuardrail/commits/main"><img alt="最近提交" src="https://img.shields.io/github/last-commit/T-Zevin/SkillGuardrail"></a>
 </p>
 
-![SkillGuardrail — security guardrails for Agent Skills](assets/skillguardrail-hero.png)
+![SkillGuardrail：Agent Skills 安全护栏](assets/skillguardrail-hero.png)
 
-**Scan before your agent reads. Install only what you trust.**
+**在 Agent 读取之前先扫描，只安装你真正信任的 Skill。**
 
-SkillGuardrail is an open-source pre-install security scanner and guarded installer for Agent Skills. It puts untrusted skill packages through a quarantine, static-analysis, policy, and verification workflow before they reach an agent's skill discovery directory.
+SkillGuardrail 是一个开源的 Agent Skills 安装前安全扫描器和受控安装工具。它把公开 GitHub 包下载到私有隔离区，并把本地目录复制成有资源上限的私有快照；完成确定性静态检查、能力推断和策略判定，得到明确批准后才写入 Codex、Claude Code、Cursor、Gemini CLI 或 OpenClaw 的 Skill 目录。
 
-It is designed for portable `SKILL.md` packages used with Codex, Claude Code, Cursor, Gemini CLI, OpenClaw, and other Agent Skills-compatible tools.
+> SkillGuardrail 只能降低风险，不能证明一个 Skill 绝对安全。请继续使用最小权限、Agent 沙箱和人工复核。
 
-> [!IMPORTANT]
-> SkillGuardrail is an early security tool. Static analysis can reduce risk, but it cannot prove that a skill is safe. Review findings, keep agents sandboxed, grant the least privilege possible, and treat unknown publishers as untrusted.
-
-| **Quarantine first** | **Policy, not just scores** | **Verifiable installs** |
+| **先隔离** | **不止打分，更能执行策略** | **安装结果可验证** |
 |:---|:---|:---|
-| Inspect untrusted packages without running their code. | Turn findings and capability chains into an enforceable verdict. | Bind installs to source commits, fingerprints, and external receipts. |
+| 在不运行包内代码的前提下检查不可信 Skill。 | 将风险发现与能力链转化为明确、可执行的判定。 | 用来源 commit、内容指纹和外部 receipt 绑定安装结果。 |
 
-## Table of contents
+## 目录
 
-- [Why SkillGuardrail?](#why-skillguardrail)
-- [What it checks](#what-it-checks)
-- [Install](#install)
-  - [Homebrew](#homebrew)
-  - [Go](#go)
-  - [Release binaries](#release-binaries)
-  - [Platform support](#platform-support)
-- [Quick start](#quick-start)
-- [Verdicts](#verdicts)
-- [Exit codes](#exit-codes)
-- [Security model](#security-model)
-- [Automation](#automation)
-- [Project status](#project-status)
-- [Related work](#related-work)
-- [Contributing](#contributing)
-- [License](#license)
+- [核心区别](#核心区别)
+- [安装](#安装)
+  - [平台支持](#平台支持)
+- [使用](#使用)
+- [判定与退出码](#判定与退出码)
+- [相关工作](#相关工作)
+- [许可证](#许可证)
 
-## Why SkillGuardrail?
+## 核心区别
 
-Installing a skill is not the same as copying an ordinary Markdown file. A skill can introduce instructions, executable scripts, dependencies, network access, and references to external content into an agent's trust boundary.
-
-SkillGuardrail makes that boundary explicit:
+它不只是输出一份扫描分数，还覆盖完整安装事务：
 
 ```text
-untrusted source
-      │
-      ▼
-quarantine ──► static scan ──► capability analysis ──► policy verdict
-                                                          │
-                                    blocked ◄─────────────┼─────────────► approved
-                                                                                │
-                                                                                ▼
-                                                        atomic install + external receipt
-                                                                                │
-                                                                                ▼
-                                                                      later verification
+不可信来源 → 隔离获取 → 静态扫描 → 风险判定 → 明确批准
+                                              ↓
+                                  原子安装 + 文件级 receipt
+                                              ↓
+                                         后续篡改验证
 ```
 
-Unlike scan-only tools, SkillGuardrail binds the decision to an immutable source commit and exact package fingerprint, requires the staged fingerprint to match, installs atomically, and stores a path-bound authoritative receipt outside the Skill directory so package-local metadata cannot certify itself.
+- GitHub 可变分支先解析成不可变 commit；
+- 仅从 GitHub 官方 API 和 codeload 获取公开仓库；
+- 安全解包，拒绝路径穿越、软硬链接、特殊文件、大小写碰撞和压缩炸弹；
+- 扫描过程中不执行 Skill 脚本、解释器、包管理器或安装钩子；
+- 检查 Prompt Injection、敏感凭据访问、外传、危险命令、持久化、混淆、二进制和供应链风险；
+- 安装前再次扫描 staging 内容，随后在同一文件系统原子切换；
+- 权威 receipt 保存在 Skill 目录之外的私有状态目录，并绑定规范化安装路径；包内 `.skillguardrail.lock` 只是便于查看的镜像，不能给自己背书；
+- receipt 记录来源 commit、归档哈希、包指纹、条目类型与权限、逐文件 SHA-256、风险发现和能力清单；
+- `verify` 可以发现安装后的新增、删除和修改。
 
-## What it checks
+## 安装
 
-SkillGuardrail looks for individual indicators and dangerous combinations across the complete skill directory:
-
-- prompt injection, instruction override, and concealed directives;
-- catalog injection in `name` or `description`, which an agent may load before the full skill;
-- access to secrets, credentials, environment variables, and sensitive files;
-- network egress, remote downloads, metadata endpoints, and external instructions;
-- shell execution, `eval`, persistence, destructive writes, and system modification;
-- obfuscation such as zero-width or bidirectional Unicode, Base64, and long encoded payloads;
-- install-time package hooks, remote-script execution, archives, and unexpected binaries;
-- capability chains such as **sensitive read + network egress** or **decode + execute**.
-
-Reports include rule IDs, severity, evidence locations, an inferred capability inventory, a detected-rule-signal score, a policy verdict, and a reproducible package fingerprint. The score is not a probability of compromise: `0` means that the enabled rules did not match a known signal, not that residual risk is zero. Every report carries the explicit claim `not-proven-safe`. Portable and platform-specific metadata such as `allowed-tools` is retained for human review without assuming that every ecosystem shares one permission schema. Text, JSON, and SARIF output are available. See the [built-in rule catalog](docs/rules.md).
-
-## Install
-
-### Homebrew
-
-The release workflow generates a SHA-256-pinned formula. Once `T-Zevin/homebrew-tap` and its release token are configured:
-
-```bash
-brew install T-Zevin/tap/skillguardrail
-```
-
-### Go
-
-Go 1.23 or newer is required when installing from source:
+使用 Go 1.23 或更高版本：
 
 ```bash
 go install github.com/T-Zevin/SkillGuardrail/cmd/skillguardrail@latest
 ```
 
-This path derives the tool version from Go module build information. Official release archives additionally embed the resolved tag commit and build time.
+通过该方式安装时，工具版本来自 Go 模块构建信息；官方 Release 归档还会写入标签对应的提交和构建时间。
 
-### Release binaries
+发布版本可从 [GitHub Releases](https://github.com/T-Zevin/SkillGuardrail/releases) 下载，并使用 `checksums.txt` 校验。
 
-Download the archive for your platform from [GitHub Releases](https://github.com/T-Zevin/SkillGuardrail/releases), then verify it against `checksums.txt` before placing the binary on your `PATH`.
+通过 Homebrew 安装：
 
-### Platform support
+```bash
+brew install T-Zevin/tap/skillguardrail
+```
 
-Scanning and report generation are supported on macOS, Linux, and Windows. Guarded `install` and `verify` are enabled on macOS and Linux, where SkillGuardrail removes and verifies extended/POSIX ACLs in addition to checking ordinary permission modes. They also fail closed when the filesystem cannot prove ACL absence. Guarded operations are disabled on other platforms in the initial release; Windows users can still scan a package and then install reviewed files manually.
+已安装旧版本时更新：
 
-On macOS, the guarded operations call only the fixed system utilities `/bin/chmod` and `/bin/ls` for ACL handling. SkillGuardrail never invokes a package-provided executable, script, interpreter, or install hook.
+```bash
+brew update
+brew upgrade T-Zevin/tap/skillguardrail
+```
 
-## Quick start
+### 平台支持
 
-Scan a local skill without installing it:
+macOS、Linux 和 Windows 均支持扫描及报告输出。受控 `install` 和 `verify` 初版仅在 macOS 与 Linux 启用：除普通权限位外，工具还会清除并验证扩展 ACL/POSIX ACL；如果文件系统无法证明 ACL 不存在，也会默认拒绝。其他平台不会启用受控操作，但 Windows 用户仍可先扫描，再手动安装已复核文件。
+
+macOS 上的受控操作只会为 ACL 处理调用固定系统工具 `/bin/chmod` 和 `/bin/ls`，不会调用 Skill 自带的可执行文件、脚本、解释器或安装钩子。
+
+## 使用
+
+扫描本地 Skill：
 
 ```bash
 skillguardrail scan ./my-skill
 ```
 
-Scan a public GitHub repository. Remote content is resolved to an immutable commit before analysis:
+扫描公开 GitHub 仓库：
 
 ```bash
 skillguardrail scan https://github.com/example/useful-skill
 ```
 
-If a repository has no root `SKILL.md` but contains exactly one nested Skill,
-SkillGuardrail automatically scans that Skill directory. Repositories with
-multiple nested Skills remain at the repository root so you can review the
-candidate list before selecting one.
+如果仓库根目录没有 `SKILL.md`，但只包含一个嵌套 Skill，SkillGuardrail 会自动选择该 Skill 目录进行扫描。若仓库包含多个嵌套 Skill，则保留仓库级扫描结果，避免在没有用户确认时自动选错安装对象。
 
-Interactive terminal scans show a staged progress bar while the source is
-resolved, quarantined, and analyzed. Progress is written to stderr and is
-automatically disabled for JSON/SARIF output, redirected logs, and other
-non-interactive writers.
+在交互式终端中，扫描会显示阶段进度条，提示当前处于来源解析、隔离获取或静态分析阶段。进度信息写入 stderr；JSON、SARIF、重定向日志和其他非交互输出不会被进度内容污染。
 
-The default scan timeout is 10 minutes (15 minutes for `install`) because
-public GitHub archives can be slow through proxies or rate-limited networks.
-Use `--timeout 20m` for a slower connection; GitHub API and archive GETs also
-retry transient connection failures a small number of times.
+默认 `scan` 超时为 20 分钟，`install` 为 15 分钟，因为公共 GitHub 归档在代理或受限网络下可能较慢。下载时终端会显示归档的已下载/总量；传输中断后会清空不完整的临时归档并有限重试。网络特别慢时可显式使用 `--timeout 25m`。
 
-Remote acquisition has bounded defaults: 64 MiB for the compressed GitHub
-archive, 128 MiB for extracted files, 160 MiB for the uncompressed tar stream,
-and 10,000 source entries. These limits prevent untrusted archives from
-exhausting disk or memory while covering ordinary multi-skill repositories.
-For a larger repository, raise them explicitly within the built-in hard
-ceilings with `--max-archive-size`, `--max-extract-size`,
-`--max-uncompressed-size`, and `--max-source-entries`.
+远程来源默认有明确边界：GitHub 压缩归档 64 MiB、解包后文件总量 128 MiB、tar 未压缩流 160 MiB、来源条目 10,000 个。这些限制用于防止不可信归档耗尽磁盘或内存，同时覆盖常见的多 Skill 仓库。更大的仓库可以在内置硬上限内显式提高 `--max-archive-size`、`--max-extract-size`、`--max-uncompressed-size` 和 `--max-source-entries`。
 
-Large resources are still included in the package fingerprint even when they
-exceed the text-analysis budget. The report separates detected rule signals
-from content coverage and lists files that received metadata/hash review only.
-An apparently clean result is therefore a bounded static-analysis result, not
-a safety certificate or a zero-risk guarantee.
+超过文本分析预算的大文件仍会纳入完整包指纹；报告会把已知规则信号评分、扫描状态和内容覆盖率分开，并列出仅完成元数据/哈希检查的文件。评分不是被攻陷概率；`0` 只代表当前规则没有命中已知信号，不代表剩余风险为零。每份报告都会标注 `not-proven-safe`（未证明安全）。看起来干净的结果只是有边界的静态分析结果，不是安全证明。
 
-Public GitHub HTTPS repositories are supported. A root Skill or a repository
-with exactly one nested Skill can be scanned directly; multiple nested Skills
-are reported for explicit selection.
-
-Request machine-readable output:
+输出 JSON 或 SARIF：
 
 ```bash
 skillguardrail scan ./my-skill --format json
+skillguardrail scan ./my-skill --format sarif --output skillguardrail.sarif
 ```
 
-Human-readable reports are English by default. Add `-cn` to switch to
-Simplified Chinese. The table layout, risk bar, architecture tree, and
-translated rule explanations apply to text output; JSON and SARIF keep their
-stable machine-readable fields:
+文本报告默认使用英文；加上 `-cn` 后切换为简体中文，并会以摘要表、评分条、项目结构树、能力表和发现表展示结果：
 
 ```bash
 skillguardrail scan ./my-skill -cn
 ```
 
-Terminal colors are enabled automatically when supported. Add `--no-color`
-only for plain-text logs or CI output.
+`-cn` 只影响人类可读的文本输出；JSON 和 SARIF 保持稳定的机器可读字段，适合 CI 和下游脚本。
+终端支持颜色时默认会启用颜色；只有在日志或 CI 需要纯文本时才添加 `--no-color`。
 
-Produce SARIF for GitHub code scanning or another compatible consumer:
-
-```bash
-skillguardrail scan ./my-skill --format sarif --output skillguardrail.sarif
-```
-
-Guarded installation scans first and refuses disallowed findings before writing into the selected agent's skill directory:
+扫描通过后安装到 Codex：
 
 ```bash
 skillguardrail install https://github.com/example/useful-skill --target codex --yes
 ```
 
-`--yes` records an explicit non-interactive installation decision; it never overrides a `block` or `critical` verdict. `--allow-risk` is limited to review-level severities (`info`, `low`, or `medium`). Omit `--yes` when you only want the command to explain the required approval without changing the destination.
+目标目录和权威状态根目录必须归当前用户所有，且不能让其他用户写入。自定义 `--state-dir` 在 Unix 上应使用 `0700` 权限。使用 `--replace` 时，旧 Skill 会保存在唯一的私有备份目录，成功后命令会输出具体路径。
 
-The target and authoritative state roots must be owned by the current user and must not be writable by another user. A private `--state-dir` must not grant group/other access (use mode `0700` on Unix). `--replace` keeps the previous Skill in a unique private backup container and prints its path after a successful replacement.
-
-Verify an installed skill against its recorded source and fingerprint:
+验证已安装内容是否变化：
 
 ```bash
 skillguardrail verify my-skill --target codex
 skillguardrail verify ~/.codex/skills/my-skill
 ```
 
-See the options supported by your build:
+默认权威 receipt 位于当前用户的 SkillGuardrail 配置状态目录。受控操作会验证目录所有者与父目录替换边界，并拒绝未清除的文件系统 ACL，避免出现 receipt 未记录的额外访问权限。备份或自动化场景可通过 `SKILLGUARDRAIL_STATE_HOME` 或安装、验证命令的 `--state-dir` 指定其他位置，但它必须保持私有并位于 Agent 的 Skill 发现目录之外。该机制用于发现本地漂移，并不是发布者签名；若同一用户权限下的进程可以同时改写 Skill 和外部状态目录，它仍可伪造本地历史。
 
-```bash
-skillguardrail --help
-skillguardrail scan --help
-skillguardrail install --help
-```
+远程源支持公开 GitHub HTTPS 仓库。仓库根目录有 Skill，或只有一个嵌套 Skill 时可以直接扫描；多个嵌套 Skill 会保留仓库级结果，等待用户明确选择。
 
-## Verdicts
+## 判定与退出码
 
-| Verdict | Meaning | Default action |
-| --- | --- | --- |
-| `pass` | No known blocking signal was detected; this is not a zero-risk claim | Continue only after reviewing capabilities and provenance |
-| `review` | Medium-risk behavior or accumulated risk needs review | Require an explicit decision |
-| `block` | A high-risk finding or risk threshold was reached | Always refuse installation in `0.x` |
-| `critical` | A critical behavior chain or invariant violation was detected | Always refuse |
+| 判定 | 默认行为 |
+| --- | --- |
+| `pass` | 未发现已知阻断信号；不代表零风险，仍需复核来源和能力 |
+| `review` | 存在 Medium 风险，需要明确决定 |
+| `block` | 存在 High 风险或累计风险达到阈值，禁止安装 |
+| `critical` | 关键行为链或安全边界破坏，禁止覆盖 |
 
-A `pass` verdict means only that the enabled rules did not identify a known blocking signal. It is not a safety certificate, a probability estimate, or a zero-risk guarantee.
-
-## Exit codes
-
-SkillGuardrail is intended to work in local scripts and CI:
-
-| Code | Meaning |
+| 退出码 | 含义 |
 | ---: | --- |
-| `0` | Command completed and policy allowed the result |
-| `1` | Findings require review or block the requested operation |
-| `2` | Usage, source, I/O, or internal error; the scan is incomplete |
-| `3` | The operation was cancelled or requires an explicit `--yes` |
+| `0` | 策略允许或命令成功 |
+| `1` | 需要复核或策略拒绝 |
+| `2` | 参数、获取、解析、扫描或 I/O 失败，结果不完整 |
+| `3` | 操作取消或缺少明确的 `--yes` |
 
-Incomplete scans fail closed for installation.
+规则目录见 [docs/rules.md](docs/rules.md)，安全边界与已知限制见 [docs/threat-model.md](docs/threat-model.md)。
 
-## Security model
+## 相关工作
 
-Remote packages are downloaded into a private quarantine directory, and local packages are copied into a bounded private snapshot before inspection. SkillGuardrail does not execute skill scripts or invoke their interpreters during inspection. Installation occurs only after a complete scan and matching staging fingerprint.
+项目设计参考了 [NVIDIA SkillSpector](https://github.com/NVIDIA/SkillSpector)、[Cisco AI Defense Skill Scanner](https://github.com/cisco-ai-defense/skill-scanner)、[Agent Skills 规范](https://agentskills.io/specification)和 [OWASP Agentic Skills Top 10](https://owasp.org/www-project-agentic-skills-top-10/)，代码与安全安装事务为独立实现，不代表上述项目对 SkillGuardrail 的认证或背书。
 
-The authoritative receipt is stored in a private per-user SkillGuardrail state directory outside the agent's Skill discovery tree; the installed `.skillguardrail.lock` is an inspectable mirror, not the source of trust. The receipt is bound to the canonical installation path and records entry types, modes, sizes, and hashes. Guarded operations validate directory ownership and parent replacement boundaries, and reject residual filesystem ACLs that could grant access beyond those recorded modes. `SKILLGUARDRAIL_STATE_HOME` or `--state-dir` can relocate this state for backup or controlled automation, but the directory must remain private and outside the Skill discovery directory.
+## 许可证
 
-This is local drift detection, not publisher attestation. A process running as the same user that can rewrite both the installed Skill and SkillGuardrail's external state can forge local history; signed provenance and OS-backed keys are future hardening areas.
-
-The detailed trust boundaries, attacker capabilities, archive defenses, known limitations, and non-goals are documented in [the threat model](docs/threat-model.md).
-
-SkillGuardrail follows the portable [`SKILL.md` specification](https://agentskills.io/specification) where possible and treats platform-specific metadata as optional input. Its rule taxonomy is intended to remain mappable to public work such as the [OWASP Agentic Skills Top 10](https://owasp.org/www-project-agentic-skills-top-10/); this does not imply certification or endorsement by either project.
-
-## Automation
-
-JSON and SARIF reports are suitable for policy checks, CI artifacts, code-scanning ingestion, and downstream integrations:
-
-```bash
-skillguardrail scan ./my-skill --format json > skillguardrail-report.json
-```
-
-Treat the JSON as untrusted data when rendering evidence in another system. Evidence is truncated and should never be executed.
-
-## Project status
-
-SkillGuardrail is under active development. The initial release focuses on a trustworthy local CLI, deterministic static rules, guarded installation, verification, JSON, and SARIF. Planned areas include signed rule bundles, additional source providers, organization policy packs, deeper language-aware analysis, and editor or agent integrations.
-
-## Related work
-
-SkillGuardrail is an independent implementation informed by the public threat models and detection ideas in [NVIDIA SkillSpector](https://github.com/NVIDIA/SkillSpector), [Cisco AI Defense Skill Scanner](https://github.com/cisco-ai-defense/skill-scanner), the [Agent Skills specification](https://agentskills.io/specification), and the [OWASP Agentic Skills Top 10](https://owasp.org/www-project-agentic-skills-top-10/). Its focus is the secure acquisition-to-installation transaction and subsequent drift verification. No endorsement by those projects is implied.
-
-## Contributing
-
-Security rules are most useful when they are explainable and backed by benign and malicious fixtures. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
-
-To report a vulnerability in SkillGuardrail itself, follow [SECURITY.md](SECURITY.md). Do not submit a public issue containing an exploit or undisclosed vulnerable skill.
-
-## License
-
-Licensed under the [Apache License 2.0](LICENSE).
+[Apache License 2.0](LICENSE)
