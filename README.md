@@ -84,7 +84,7 @@ SkillGuardrail looks for individual indicators and dangerous combinations across
 - install-time package hooks, remote-script execution, archives, and unexpected binaries;
 - capability chains such as **sensitive read + network egress** or **decode + execute**.
 
-Reports include rule IDs, severity, evidence locations, an inferred capability inventory, a risk score, a policy verdict, and a reproducible package fingerprint. Portable and platform-specific metadata such as `allowed-tools` is retained for human review without assuming that every ecosystem shares one permission schema. Text, JSON, and SARIF output are available. See the [built-in rule catalog](docs/rules.md).
+Reports include rule IDs, severity, evidence locations, an inferred capability inventory, a detected-rule-signal score, a policy verdict, and a reproducible package fingerprint. The score is not a probability of compromise: `0` means that the enabled rules did not match a known signal, not that residual risk is zero. Every report carries the explicit claim `not-proven-safe`. Portable and platform-specific metadata such as `allowed-tools` is retained for human review without assuming that every ecosystem shares one permission schema. Text, JSON, and SARIF output are available. See the [built-in rule catalog](docs/rules.md).
 
 ## Install
 
@@ -141,8 +141,10 @@ automatically disabled for JSON/SARIF output, redirected logs, and other
 non-interactive writers.
 
 Large resources are still included in the package fingerprint even when they
-exceed the text-analysis budget. The report separates risk score from content
-coverage and lists files that received metadata/hash review only.
+exceed the text-analysis budget. The report separates detected rule signals
+from content coverage and lists files that received metadata/hash review only.
+An apparently clean result is therefore a bounded static-analysis result, not
+a safety certificate or a zero-risk guarantee.
 
 Public GitHub HTTPS repositories are supported. A root Skill or a repository
 with exactly one nested Skill can be scanned directly; multiple nested Skills
@@ -201,12 +203,12 @@ skillguardrail install --help
 
 | Verdict | Meaning | Default action |
 | --- | --- | --- |
-| `pass` | No blocking signal was detected | Installation may continue |
+| `pass` | No known blocking signal was detected; this is not a zero-risk claim | Continue only after reviewing capabilities and provenance |
 | `review` | Medium-risk behavior or accumulated risk needs review | Require an explicit decision |
 | `block` | A high-risk finding or risk threshold was reached | Always refuse installation in `0.x` |
 | `critical` | A critical behavior chain or invariant violation was detected | Always refuse |
 
-A `pass` verdict means only that the enabled rules did not identify a blocking signal. It is not a safety certificate.
+A `pass` verdict means only that the enabled rules did not identify a known blocking signal. It is not a safety certificate, a probability estimate, or a zero-risk guarantee.
 
 ## Exit codes
 

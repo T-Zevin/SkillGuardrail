@@ -108,11 +108,14 @@ func writeText(w io.Writer, scan model.ScanReport, color bool, language Language
 	verdictLabel := localizedVerdict(scan.Verdict, language)
 	statusEmoji := verdictEmoji(scan.Verdict)
 	if language == LanguageChinese {
-		if _, err := fmt.Fprintf(w, "🛡️ 判定  %s %s  |  风险 %d/100\n", paint("1;"+verdictColor, verdictLabel), statusEmoji, scan.RiskScore); err != nil {
+		if _, err := fmt.Fprintf(w, "🛡️ 判定  %s %s  |  已知信号 %d/100\n", paint("1;"+verdictColor, verdictLabel), statusEmoji, scan.RiskScore); err != nil {
 			return err
 		}
-	} else if _, err := fmt.Fprintf(w, "🛡️ VERDICT  %s %s  |  RISK %d/100\n",
+	} else if _, err := fmt.Fprintf(w, "🛡️ VERDICT  %s %s  |  KNOWN SIGNALS %d/100\n",
 		paint("1;"+verdictColor, verdictLabel), statusEmoji, scan.RiskScore); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "\n%s\n", safetyBoundary(language, scan)); err != nil {
 		return err
 	}
 	coverage := fmt.Sprintf("%d/%d", scan.FilesAnalyzed, scan.FilesScanned)
@@ -127,6 +130,7 @@ func writeText(w io.Writer, scan model.ScanReport, color bool, language Language
 		{t.summaryVerdict, verdictLabel},
 		{t.summaryRisk, fmt.Sprintf("%d/100", scan.RiskScore)},
 		{t.summaryScore, scoreBar(scan.RiskScore)},
+		{t.summarySafetyClaim, safetyClaim(language)},
 		{t.summaryHighest, localizedSeverity(scan.Highest, language)},
 		{t.summarySource, truncate(SafeText(scan.Source.Input), 96)},
 		{t.summaryFiles, fmt.Sprintf("%d (%s)", scan.FilesScanned, formatBytes(scan.BytesScanned))},
@@ -225,40 +229,40 @@ func writeText(w io.Writer, scan model.ScanReport, color bool, language Language
 }
 
 type reportText struct {
-	summaryTitle, field, value, summaryVerdict, summaryRisk, summaryScore, summaryHighest, summarySource, summaryFiles, summaryCoverage, summaryFingerprint, summarySkill         string
-	verdictLevelsTitle, level, meaning, architectureTitle, capabilitiesTitle, severity, capability, findingsTitle, rule, location, title, detailsTitle, evidence, fix, noFindings string
+	summaryTitle, field, value, summaryVerdict, summaryRisk, summaryScore, summarySafetyClaim, summaryHighest, summarySource, summaryFiles, summaryCoverage, summaryFingerprint, summarySkill string
+	verdictLevelsTitle, level, meaning, architectureTitle, capabilitiesTitle, severity, capability, findingsTitle, rule, location, title, detailsTitle, evidence, fix, noFindings             string
 }
 
 func textFor(language Language) reportText {
 	if language == LanguageChinese {
 		return reportText{
-			summaryTitle: "📊 扫描摘要", field: "字段", value: "值", summaryVerdict: "判定", summaryRisk: "风险", summaryScore: "评分", summaryHighest: "最高级别", summarySource: "来源", summaryFiles: "文件", summaryCoverage: "内容覆盖", summaryFingerprint: "指纹", summarySkill: "Skill",
+			summaryTitle: "📊 扫描摘要", field: "字段", value: "值", summaryVerdict: "判定", summaryRisk: "已知信号", summaryScore: "信号条", summarySafetyClaim: "安全结论", summaryHighest: "最高级别", summarySource: "来源", summaryFiles: "文件", summaryCoverage: "内容覆盖", summaryFingerprint: "指纹", summarySkill: "Skill",
 			verdictLevelsTitle: "🧭 判定等级", level: "等级", meaning: "含义",
 			architectureTitle: "🌳 项目结构",
 			capabilitiesTitle: "🧩 能力清单", severity: "级别", capability: "能力", findingsTitle: "🔎 发现", rule: "规则", location: "位置", title: "标题", detailsTitle: "发现详情", evidence: "证据", fix: "建议",
-			noFindings: "未发现问题。静态分析不能证明 Skill 绝对安全，请仍然复核它申请的能力。",
+			noFindings: "未发现已知规则命中。这个结果不是零风险证明，请仍然复核来源、能力和未分析内容。",
 		}
 	}
 	return reportText{
-		summaryTitle: "📊 SUMMARY", field: "FIELD", value: "VALUE", summaryVerdict: "VERDICT", summaryRisk: "RISK", summaryScore: "SCORE", summaryHighest: "HIGHEST", summarySource: "SOURCE", summaryFiles: "FILES", summaryCoverage: "CONTENT COVERAGE", summaryFingerprint: "FINGERPRINT", summarySkill: "SKILL",
+		summaryTitle: "📊 SUMMARY", field: "FIELD", value: "VALUE", summaryVerdict: "VERDICT", summaryRisk: "KNOWN SIGNALS", summaryScore: "SIGNAL BAR", summarySafetyClaim: "SAFETY CLAIM", summaryHighest: "HIGHEST", summarySource: "SOURCE", summaryFiles: "FILES", summaryCoverage: "CONTENT COVERAGE", summaryFingerprint: "FINGERPRINT", summarySkill: "SKILL",
 		verdictLevelsTitle: "🧭 VERDICT LEVELS", level: "LEVEL", meaning: "MEANING",
 		architectureTitle: "🌳 PROJECT ARCHITECTURE",
 		capabilitiesTitle: "🧩 CAPABILITIES", severity: "SEVERITY", capability: "CAPABILITY", findingsTitle: "🔎 FINDINGS", rule: "RULE", location: "LOCATION", title: "TITLE", detailsTitle: "DETAILS", evidence: "Evidence", fix: "Fix",
-		noFindings: "No findings. Static analysis cannot prove a skill is safe; review its requested capabilities before installation.",
+		noFindings: "No known rule matches. This is not a zero-risk claim; review provenance, capabilities, and uninspected content before installation.",
 	}
 }
 
 func verdictRows(language Language) [][]string {
 	if language == LanguageChinese {
 		return [][]string{
-			{"通过", "未发现阻断信号；仍应复核 Skill 的能力和来源。"},
+			{"通过", "未发现已知阻断信号；不代表零风险，仍应复核 Skill 的能力和来源。"},
 			{"需复核", "存在中风险信号，需要人工确认后再决定。"},
 			{"阻断", "存在高风险信号或风险阈值已达到，默认拒绝安装。"},
 			{"严重", "发现严重行为链或完整性问题，始终拒绝安装。"},
 		}
 	}
 	return [][]string{
-		{"PASS", "No blocking signal detected; review capabilities and provenance."},
+		{"PASS", "No known blocking signal detected; this is not a zero-risk claim. Review capabilities and provenance."},
 		{"REVIEW", "Medium-risk signal requires a human decision."},
 		{"BLOCK", "High-risk signal or threshold reached; installation is refused by default."},
 		{"CRITICAL", "Critical behavior chain or integrity failure; installation is always refused."},
@@ -384,6 +388,28 @@ func localizedSeverity(severity model.Severity, language Language) string {
 		}
 	}
 	return strings.ToUpper(string(severity))
+}
+
+func safetyClaim(language Language) string {
+	if language == LanguageChinese {
+		return "未证明安全（静态规则扫描）"
+	}
+	return "NOT PROVEN SAFE (STATIC RULE SCAN)"
+}
+
+func safetyBoundary(language Language, scan model.ScanReport) string {
+	if language == LanguageChinese {
+		message := "⚠️ 安全边界：评分只代表已发现的规则信号，不是风险概率；“通过”不等于零风险或安全证明。"
+		if scan.UninspectedFiles > 0 {
+			message += fmt.Sprintf("仍有 %d 个文件未进行完整内容分析。", scan.UninspectedFiles)
+		}
+		return message
+	}
+	message := "⚠️ SAFETY BOUNDARY: the score counts detected rule signals, not the probability of compromise; PASS is not zero risk or a safety certificate."
+	if scan.UninspectedFiles > 0 {
+		message += fmt.Sprintf(" %d file(s) did not receive complete content analysis.", scan.UninspectedFiles)
+	}
+	return message
 }
 
 func scoreBar(score int) string {
@@ -588,7 +614,7 @@ func writeSARIF(w io.Writer, scan model.ScanReport) error {
 				InformationURI: "https://github.com/T-Zevin/SkillGuardrail", Rules: rules,
 			}},
 			Results:    results,
-			Properties: map[string]any{"riskScore": scan.RiskScore, "verdict": scan.Verdict, "fingerprint": scan.Fingerprint},
+			Properties: map[string]any{"riskScore": scan.RiskScore, "riskScoreMeaning": model.RiskScoreMeaningDetectedSignals, "safetyClaim": safetyClaim(LanguageEnglish), "verdict": scan.Verdict, "fingerprint": scan.Fingerprint},
 		}},
 	}
 	encoder := json.NewEncoder(w)

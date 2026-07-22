@@ -58,6 +58,12 @@ const (
 	VerdictCritical Verdict = "critical"
 )
 
+// SafetyClaim is deliberately conservative. A static scan can report known
+// rule signals, but it cannot prove that a skill is safe or that its residual
+// risk is zero.
+const SafetyClaimNotProvenSafe = "not-proven-safe"
+const RiskScoreMeaningDetectedSignals = "detected-rule-signals-not-probability"
+
 type Location struct {
 	Path   string `json:"path"`
 	Line   int    `json:"line,omitempty"`
@@ -113,6 +119,8 @@ type ScanReport struct {
 	BytesScanned     int64          `json:"bytes_scanned"`
 	Fingerprint      string         `json:"fingerprint"`
 	RiskScore        int            `json:"risk_score"`
+	RiskScoreMeaning string         `json:"risk_score_meaning"`
+	SafetyClaim      string         `json:"safety_claim"`
 	Highest          Severity       `json:"highest_severity"`
 	Verdict          Verdict        `json:"verdict"`
 	Findings         []Finding      `json:"findings"`
@@ -122,17 +130,19 @@ type ScanReport struct {
 
 func NewReport(version string, source SourceInfo, root string) ScanReport {
 	return ScanReport{
-		SchemaVersion: SchemaVersion,
-		Tool:          "SkillGuardrail",
-		ToolVersion:   version,
-		ScannedAt:     time.Now().UTC(),
-		Source:        source,
-		Root:          root,
-		Highest:       SeverityInfo,
-		Verdict:       VerdictPass,
-		Findings:      []Finding{},
-		Capabilities:  []Capability{},
-		Stats:         map[string]int{},
+		SchemaVersion:    SchemaVersion,
+		Tool:             "SkillGuardrail",
+		ToolVersion:      version,
+		ScannedAt:        time.Now().UTC(),
+		Source:           source,
+		Root:             root,
+		Highest:          SeverityInfo,
+		Verdict:          VerdictPass,
+		RiskScoreMeaning: RiskScoreMeaningDetectedSignals,
+		SafetyClaim:      SafetyClaimNotProvenSafe,
+		Findings:         []Finding{},
+		Capabilities:     []Capability{},
+		Stats:            map[string]int{},
 	}
 }
 
@@ -142,6 +152,10 @@ func (r *ScanReport) Finalize() {
 		SeverityHigh: 20, SeverityCritical: 40,
 	}
 	r.RiskScore = 0
+	// RiskScore is a heuristic score for detected rule signals, not a
+	// probability of safety. Keep this claim explicit in every report.
+	r.RiskScoreMeaning = RiskScoreMeaningDetectedSignals
+	r.SafetyClaim = SafetyClaimNotProvenSafe
 	r.Highest = SeverityInfo
 	r.Stats = map[string]int{}
 	for _, finding := range r.Findings {
@@ -195,19 +209,21 @@ func ShortHash(input string) string {
 }
 
 type LockFile struct {
-	SchemaVersion string       `json:"schema_version"`
-	ToolVersion   string       `json:"tool_version"`
-	RulePack      string       `json:"rule_pack"`
-	InstalledAt   time.Time    `json:"installed_at"`
-	InstalledPath string       `json:"installed_path"`
-	Source        SourceInfo   `json:"source"`
-	SkillName     string       `json:"skill_name"`
-	Fingerprint   string       `json:"fingerprint"`
-	RiskScore     int          `json:"risk_score"`
-	Verdict       Verdict      `json:"verdict"`
-	Capabilities  []Capability `json:"capabilities"`
-	Findings      []Finding    `json:"findings"`
-	Files         []FileDigest `json:"files"`
+	SchemaVersion    string       `json:"schema_version"`
+	ToolVersion      string       `json:"tool_version"`
+	RulePack         string       `json:"rule_pack"`
+	InstalledAt      time.Time    `json:"installed_at"`
+	InstalledPath    string       `json:"installed_path"`
+	Source           SourceInfo   `json:"source"`
+	SkillName        string       `json:"skill_name"`
+	Fingerprint      string       `json:"fingerprint"`
+	RiskScore        int          `json:"risk_score"`
+	RiskScoreMeaning string       `json:"risk_score_meaning"`
+	SafetyClaim      string       `json:"safety_claim"`
+	Verdict          Verdict      `json:"verdict"`
+	Capabilities     []Capability `json:"capabilities"`
+	Findings         []Finding    `json:"findings"`
+	Files            []FileDigest `json:"files"`
 }
 
 type FileDigest struct {

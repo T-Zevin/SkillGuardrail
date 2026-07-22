@@ -121,6 +121,13 @@ The portable Agent Skills specification requires `name` and `description`; field
 
 Capabilities matter in combination. For example, a networking helper and a credential reader may each have legitimate uses in isolation, while `sensitive_read + network_egress` is a critical exfiltration chain. Other critical chains include `external_instruction + dynamic_exec`, `decode + execute`, and `system_write + execute`.
 
+The report's `risk_score` is a bounded heuristic for detected rule signals. It is
+not a probability of compromise, and a score of `0` does not mean zero risk.
+`pass` means only that the enabled rules did not identify a known blocking
+signal within the inspected scope. Every finalized report carries the
+`not-proven-safe` safety claim; static analysis cannot establish that a skill is
+safe, benign, or free of undiscovered behavior.
+
 ## 7. Policy model
 
 | Highest effective risk | Verdict | Installation policy |

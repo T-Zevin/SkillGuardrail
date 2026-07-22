@@ -189,19 +189,21 @@ func Install(ctx context.Context, root string, report model.ScanReport, options 
 		return Result{}, fmt.Errorf("prepare authoritative receipt directory: %w", err)
 	}
 	lock := model.LockFile{
-		SchemaVersion: model.SchemaVersion,
-		ToolVersion:   options.ToolVersion,
-		RulePack:      "builtin-v1",
-		InstalledAt:   time.Now().UTC(),
-		InstalledPath: destination,
-		Source:        report.Source,
-		SkillName:     name,
-		Fingerprint:   stageReport.Fingerprint,
-		RiskScore:     stageReport.RiskScore,
-		Verdict:       stageReport.Verdict,
-		Capabilities:  stageReport.Capabilities,
-		Findings:      stageReport.Findings,
-		Files:         files,
+		SchemaVersion:    model.SchemaVersion,
+		ToolVersion:      options.ToolVersion,
+		RulePack:         "builtin-v1",
+		InstalledAt:      time.Now().UTC(),
+		InstalledPath:    destination,
+		Source:           report.Source,
+		SkillName:        name,
+		Fingerprint:      stageReport.Fingerprint,
+		RiskScore:        stageReport.RiskScore,
+		RiskScoreMeaning: stageReport.RiskScoreMeaning,
+		SafetyClaim:      stageReport.SafetyClaim,
+		Verdict:          stageReport.Verdict,
+		Capabilities:     stageReport.Capabilities,
+		Findings:         stageReport.Findings,
+		Files:            files,
 	}
 	lockBytes, err := json.MarshalIndent(lock, "", "  ")
 	if err != nil {

@@ -28,7 +28,7 @@ func TestTextReport(t *testing.T) {
 	if err := Write(&out, sampleReport(), FormatText, false); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"VERDICT  BLOCK", "SG-EXEC-002", "SKILL.md:7", "SUMMARY", "FINDINGS"} {
+	for _, want := range []string{"VERDICT  BLOCK", "KNOWN SIGNALS 20/100", "NOT PROVEN SAFE", "SAFETY CLAIM", "SG-EXEC-002", "SKILL.md:7", "SUMMARY", "FINDINGS"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("report missing %q:\n%s", want, out.String())
 		}
@@ -40,7 +40,7 @@ func TestChineseTextReport(t *testing.T) {
 	if err := WriteLocalized(&out, sampleReport(), FormatText, false, LanguageChinese); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"判定  阻断", "扫描摘要", "判定", "发现", "高", "破坏性文件系统命令", "命令可能递归或强制删除文件或存储。", "建议"} {
+	for _, want := range []string{"判定  阻断", "已知信号 20/100", "安全边界", "安全结论", "扫描摘要", "判定", "发现", "高", "破坏性文件系统命令", "命令可能递归或强制删除文件或存储。", "建议"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("Chinese report missing %q:\n%s", want, out.String())
 		}

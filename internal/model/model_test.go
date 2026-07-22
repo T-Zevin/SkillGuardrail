@@ -30,3 +30,14 @@ func TestCheckInstallPolicy(t *testing.T) {
 		})
 	}
 }
+
+func TestFinalizeKeepsSafetyClaimExplicit(t *testing.T) {
+	report := NewReport("test", SourceInfo{Kind: "local"}, "/tmp/skill")
+	report.Finalize()
+	if report.RiskScore != 0 {
+		t.Fatalf("clean report signal score = %d, want 0 detected signals", report.RiskScore)
+	}
+	if report.SafetyClaim != SafetyClaimNotProvenSafe {
+		t.Fatalf("safety claim = %q, want %q", report.SafetyClaim, SafetyClaimNotProvenSafe)
+	}
+}
