@@ -234,6 +234,29 @@ func TestStoreArchiveHashesCompleteBody(t *testing.T) {
 	}
 }
 
+func TestSourceLimitsHaveBoundedDefaultsAndOverrides(t *testing.T) {
+	defaults, err := (Limits{}).normalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaults.MaxArchiveBytes != 64<<20 || defaults.MaxExtractBytes != 128<<20 || defaults.MaxUncompressedBytes != 160<<20 || defaults.MaxExtractFiles != 10000 {
+		t.Fatalf("defaults = %#v", defaults)
+	}
+	if _, err := (Limits{MaxArchiveBytes: hardMaxArchiveBytes + 1}).normalize(); err == nil {
+		t.Fatal("oversized archive limit was accepted")
+	}
+	if _, err := (Limits{MaxExtractBytes: 200, MaxUncompressedBytes: 100}).normalize(); err == nil {
+		t.Fatal("extract limit above uncompressed limit was accepted")
+	}
+}
+
+func TestStoreArchiveHonorsConfiguredLimit(t *testing.T) {
+	var destination bytes.Buffer
+	if _, _, err := storeArchive(bytes.NewReader([]byte("12345")), &destination, 4); err == nil {
+		t.Fatal("oversized archive was accepted")
+	}
+}
+
 func TestExtractDownloadedArchiveValidatesGzipAndTrailingData(t *testing.T) {
 	valid := gzipTar(t, "repo-sha", []byte("safe\n"))
 	corruptChecksum := append([]byte(nil), valid...)

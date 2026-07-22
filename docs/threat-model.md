@@ -147,6 +147,7 @@ The initial remote-source boundary supports public HTTPS GitHub sources. The int
 - resolve a branch or tag to a full commit SHA before download;
 - download an archive associated with that immutable identity;
 - enforce redirect count, HTTPS scheme, exact GitHub host allowlists, time, and byte limits;
+- use bounded default source limits (64 MiB compressed, 128 MiB extracted, 160 MiB uncompressed, and 10,000 entries), with explicit CLI overrides only inside stricter hard ceilings;
 - reject redirects or DNS results that reach loopback, link-local, private, multicast, or reserved networks;
 - never forward credentials to a redirected host;
 - create quarantine with owner-only permissions;

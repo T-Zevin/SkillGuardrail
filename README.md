@@ -140,6 +140,14 @@ resolved, quarantined, and analyzed. Progress is written to stderr and is
 automatically disabled for JSON/SARIF output, redirected logs, and other
 non-interactive writers.
 
+Remote acquisition has bounded defaults: 64 MiB for the compressed GitHub
+archive, 128 MiB for extracted files, 160 MiB for the uncompressed tar stream,
+and 10,000 source entries. These limits prevent untrusted archives from
+exhausting disk or memory while covering ordinary multi-skill repositories.
+For a larger repository, raise them explicitly within the built-in hard
+ceilings with `--max-archive-size`, `--max-extract-size`,
+`--max-uncompressed-size`, and `--max-source-entries`.
+
 Large resources are still included in the package fingerprint even when they
 exceed the text-analysis budget. The report separates detected rule signals
 from content coverage and lists files that received metadata/hash review only.

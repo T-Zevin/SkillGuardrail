@@ -27,12 +27,16 @@ import (
 )
 
 const (
-	maxArchiveBytes      = 25 << 20
-	maxExtractBytes      = 50 << 20
-	maxUncompressedBytes = 64 << 20
-	maxExtractFiles      = 5000
-	maxExtractDepth      = 32
-	maxCompressionRatio  = 100
+	defaultMaxArchiveBytes      = 64 << 20
+	defaultMaxExtractBytes      = 128 << 20
+	defaultMaxUncompressedBytes = 160 << 20
+	defaultMaxExtractFiles      = 10000
+	hardMaxArchiveBytes         = 512 << 20
+	hardMaxExtractBytes         = 1 << 30
+	hardMaxUncompressedBytes    = 1 << 30
+	hardMaxExtractFiles         = 100000
+	maxExtractDepth             = 32
+	maxCompressionRatio         = 100
 )
 
 var (
@@ -72,6 +76,54 @@ type Resolved struct {
 	cleanupFn   func() error
 }
 
+// Limits bounds the untrusted source acquisition and extraction phase. The
+// defaults are deliberately finite, while callers may raise them within the
+// hard ceilings for large but trusted repositories.
+type Limits struct {
+	MaxArchiveBytes      int64
+	MaxExtractBytes      int64
+	MaxUncompressedBytes int64
+	MaxExtractFiles      int
+}
+
+func DefaultLimits() Limits {
+	return Limits{
+		MaxArchiveBytes:      defaultMaxArchiveBytes,
+		MaxExtractBytes:      defaultMaxExtractBytes,
+		MaxUncompressedBytes: defaultMaxUncompressedBytes,
+		MaxExtractFiles:      defaultMaxExtractFiles,
+	}
+}
+
+func (l Limits) normalize() (Limits, error) {
+	defaults := DefaultLimits()
+	if l.MaxArchiveBytes <= 0 {
+		l.MaxArchiveBytes = defaults.MaxArchiveBytes
+	}
+	if l.MaxExtractBytes <= 0 {
+		l.MaxExtractBytes = defaults.MaxExtractBytes
+	}
+	if l.MaxUncompressedBytes <= 0 {
+		l.MaxUncompressedBytes = defaults.MaxUncompressedBytes
+	}
+	if l.MaxExtractFiles <= 0 {
+		l.MaxExtractFiles = defaults.MaxExtractFiles
+	}
+	switch {
+	case l.MaxArchiveBytes > hardMaxArchiveBytes:
+		return Limits{}, fmt.Errorf("maximum archive size may not exceed %s", formatLimit(hardMaxArchiveBytes))
+	case l.MaxExtractBytes > hardMaxExtractBytes:
+		return Limits{}, fmt.Errorf("maximum extracted size may not exceed %s", formatLimit(hardMaxExtractBytes))
+	case l.MaxUncompressedBytes > hardMaxUncompressedBytes:
+		return Limits{}, fmt.Errorf("maximum uncompressed size may not exceed %s", formatLimit(hardMaxUncompressedBytes))
+	case l.MaxExtractFiles > hardMaxExtractFiles:
+		return Limits{}, fmt.Errorf("maximum source entries may not exceed %d", hardMaxExtractFiles)
+	case l.MaxExtractBytes > l.MaxUncompressedBytes:
+		return Limits{}, errors.New("maximum extracted size may not exceed maximum uncompressed size")
+	}
+	return l, nil
+}
+
 func (r *Resolved) Cleanup() error {
 	var err error
 	r.cleanupOnce.Do(func() {
@@ -83,17 +135,25 @@ func (r *Resolved) Cleanup() error {
 }
 
 func Resolve(ctx context.Context, input string) (*Resolved, error) {
+	return ResolveWithLimits(ctx, input, DefaultLimits())
+}
+
+func ResolveWithLimits(ctx context.Context, input string, limits Limits) (*Resolved, error) {
+	normalized, err := limits.normalize()
+	if err != nil {
+		return nil, err
+	}
 	input = strings.TrimSpace(input)
 	if input == "" {
 		return nil, errors.New("source is required")
 	}
 	if strings.Contains(input, "://") {
-		return resolveGitHub(ctx, input)
+		return resolveGitHub(ctx, input, normalized)
 	}
-	return resolveLocal(ctx, input)
+	return resolveLocal(ctx, input, normalized)
 }
 
-func resolveLocal(ctx context.Context, input string) (*Resolved, error) {
+func resolveLocal(ctx context.Context, input string, limits Limits) (*Resolved, error) {
 	abs, err := filepath.Abs(input)
 	if err != nil {
 		return nil, fmt.Errorf("resolve local source: %w", err)
@@ -125,7 +185,7 @@ func resolveLocal(ctx context.Context, input string) (*Resolved, error) {
 		return nil, fmt.Errorf("secure local quarantine: %w", err)
 	}
 	snapshot := filepath.Join(quarantine, "repository")
-	if err := copyLocalSnapshot(ctx, root, snapshot); err != nil {
+	if err := copyLocalSnapshot(ctx, root, snapshot, limits); err != nil {
 		_ = cleanup()
 		return nil, fmt.Errorf("snapshot local source into quarantine: %w", err)
 	}
@@ -138,7 +198,7 @@ func resolveLocal(ctx context.Context, input string) (*Resolved, error) {
 	}, nil
 }
 
-func copyLocalSnapshot(ctx context.Context, sourceRoot, destinationRoot string) error {
+func copyLocalSnapshot(ctx context.Context, sourceRoot, destinationRoot string, limits Limits) error {
 	seen := map[string]string{}
 	entries := 0
 	var total int64
@@ -178,8 +238,8 @@ func copyLocalSnapshot(ctx context.Context, sourceRoot, destinationRoot string) 
 		}
 		seen[folded] = relSlash
 		entries++
-		if entries > maxExtractFiles {
-			return fmt.Errorf("local source exceeds %d entries", maxExtractFiles)
+		if entries > limits.MaxExtractFiles {
+			return fmt.Errorf("local source exceeds %d entries", limits.MaxExtractFiles)
 		}
 		info, err := entry.Info()
 		if err != nil {
@@ -195,8 +255,8 @@ func copyLocalSnapshot(ctx context.Context, sourceRoot, destinationRoot string) 
 			}
 			return os.Chmod(target, 0o700)
 		}
-		if info.Size() < 0 || info.Size() > maxExtractBytes || total+info.Size() > maxExtractBytes {
-			return fmt.Errorf("local source exceeds %d bytes", maxExtractBytes)
+		if info.Size() < 0 || info.Size() > limits.MaxExtractBytes || total+info.Size() > limits.MaxExtractBytes {
+			return fmt.Errorf("local source exceeds %s", formatLimit(limits.MaxExtractBytes))
 		}
 		input, err := os.Open(sourcePath)
 		if err != nil {
@@ -271,7 +331,7 @@ func ParseGitHubURL(raw string) (string, string, string, error) {
 	return owner, repo, canonical, nil
 }
 
-func resolveGitHub(ctx context.Context, raw string) (*Resolved, error) {
+func resolveGitHub(ctx context.Context, raw string, limits Limits) (*Resolved, error) {
 	owner, repo, canonical, err := ParseGitHubURL(raw)
 	if err != nil {
 		return nil, err
@@ -320,9 +380,9 @@ func resolveGitHub(ctx context.Context, raw string) (*Resolved, error) {
 		_ = cleanup()
 		return nil, fmt.Errorf("download immutable GitHub archive: HTTP %s", resp.Status)
 	}
-	if resp.ContentLength > maxArchiveBytes {
+	if resp.ContentLength > limits.MaxArchiveBytes {
 		_ = cleanup()
-		return nil, fmt.Errorf("GitHub archive is larger than %d bytes", maxArchiveBytes)
+		return nil, fmt.Errorf("GitHub archive is larger than %s", formatLimit(limits.MaxArchiveBytes))
 	}
 
 	archiveFile, err := os.CreateTemp(quarantine, "archive-*.tar.gz")
@@ -336,7 +396,7 @@ func resolveGitHub(ctx context.Context, raw string) (*Resolved, error) {
 		_ = cleanup()
 		return nil, fmt.Errorf("secure archive quarantine file: %w", err)
 	}
-	archiveBytes, archiveHash, err := storeArchive(resp.Body, archiveFile)
+	archiveBytes, archiveHash, err := storeArchive(resp.Body, archiveFile, limits.MaxArchiveBytes)
 	closeErr := archiveFile.Close()
 	if err != nil {
 		_ = cleanup()
@@ -347,7 +407,7 @@ func resolveGitHub(ctx context.Context, raw string) (*Resolved, error) {
 		return nil, fmt.Errorf("close downloaded GitHub archive: %w", closeErr)
 	}
 	expectedArchiveRoot := repo + "-" + sha
-	if err := extractDownloadedArchive(ctx, archivePath, root, expectedArchiveRoot, archiveBytes); err != nil {
+	if err := extractDownloadedArchive(ctx, archivePath, root, expectedArchiveRoot, archiveBytes, limits); err != nil {
 		_ = cleanup()
 		return nil, fmt.Errorf("safely extract GitHub archive: %w", err)
 	}
@@ -503,20 +563,28 @@ func isPublicAddress(address netip.Addr) bool {
 	return true
 }
 
-func storeArchive(reader io.Reader, destination io.Writer) (int64, string, error) {
-	limited := &io.LimitedReader{R: reader, N: maxArchiveBytes + 1}
+func storeArchive(reader io.Reader, destination io.Writer, maxBytes ...int64) (int64, string, error) {
+	limit := DefaultLimits().MaxArchiveBytes
+	if len(maxBytes) > 0 && maxBytes[0] > 0 {
+		limit = maxBytes[0]
+	}
+	limited := &io.LimitedReader{R: reader, N: limit + 1}
 	hasher := sha256.New()
 	written, err := io.Copy(io.MultiWriter(destination, hasher), limited)
 	if err != nil {
 		return written, "", err
 	}
-	if written > maxArchiveBytes {
-		return written, "", fmt.Errorf("GitHub archive exceeds %d bytes", maxArchiveBytes)
+	if written > limit {
+		return written, "", fmt.Errorf("GitHub archive exceeds %s", formatLimit(limit))
 	}
 	return written, hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
-func extractDownloadedArchive(ctx context.Context, archivePath, root, expectedRoot string, compressedBytes int64) error {
+func extractDownloadedArchive(ctx context.Context, archivePath, root, expectedRoot string, compressedBytes int64, configuredLimits ...Limits) error {
+	limits := DefaultLimits()
+	if len(configuredLimits) > 0 {
+		limits = configuredLimits[0]
+	}
 	archiveFile, err := os.Open(archivePath)
 	if err != nil {
 		return fmt.Errorf("open downloaded archive: %w", err)
@@ -530,9 +598,9 @@ func extractDownloadedArchive(ctx context.Context, archivePath, root, expectedRo
 	}
 	gzipReader.Multistream(false)
 
-	limited := &io.LimitedReader{R: &contextReader{ctx: ctx, reader: gzipReader}, N: maxUncompressedBytes + 1}
+	limited := &io.LimitedReader{R: &contextReader{ctx: ctx, reader: gzipReader}, N: limits.MaxUncompressedBytes + 1}
 	uncompressed := &countingReader{reader: limited}
-	if _, err := extractTar(ctx, tar.NewReader(uncompressed), root, expectedRoot); err != nil {
+	if _, err := extractTar(ctx, tar.NewReader(uncompressed), root, expectedRoot, limits); err != nil {
 		_ = gzipReader.Close()
 		return err
 	}
@@ -540,9 +608,9 @@ func extractDownloadedArchive(ctx context.Context, archivePath, root, expectedRo
 		_ = gzipReader.Close()
 		return fmt.Errorf("invalid data after tar end marker: %w", err)
 	}
-	if uncompressed.count > maxUncompressedBytes {
+	if uncompressed.count > limits.MaxUncompressedBytes {
 		_ = gzipReader.Close()
-		return fmt.Errorf("archive exceeds %d uncompressed bytes", maxUncompressedBytes)
+		return fmt.Errorf("archive exceeds %s uncompressed bytes", formatLimit(limits.MaxUncompressedBytes))
 	}
 	if err := gzipReader.Close(); err != nil {
 		return fmt.Errorf("close gzip stream: %w", err)
@@ -622,7 +690,11 @@ func (r *countingReader) Read(buffer []byte) (int, error) {
 	return n, err
 }
 
-func extractTar(ctx context.Context, reader *tar.Reader, root, expectedRoot string) (int64, error) {
+func extractTar(ctx context.Context, reader *tar.Reader, root, expectedRoot string, configuredLimits ...Limits) (int64, error) {
+	limits := DefaultLimits()
+	if len(configuredLimits) > 0 {
+		limits = configuredLimits[0]
+	}
 	seen := map[string]string{}
 	archiveRoot := ""
 	var total int64
@@ -680,8 +752,8 @@ func extractTar(ctx context.Context, reader *tar.Reader, root, expectedRoot stri
 		}
 		seen[folded] = rel
 		files++
-		if files > maxExtractFiles {
-			return total, fmt.Errorf("archive exceeds %d entries", maxExtractFiles)
+		if files > limits.MaxExtractFiles {
+			return total, fmt.Errorf("archive exceeds %d entries", limits.MaxExtractFiles)
 		}
 
 		target := filepath.Join(root, filepath.FromSlash(rel))
@@ -698,8 +770,8 @@ func extractTar(ctx context.Context, reader *tar.Reader, root, expectedRoot stri
 				return total, err
 			}
 		case tar.TypeReg, tar.TypeRegA:
-			if header.Size < 0 || header.Size > maxExtractBytes || total+header.Size > maxExtractBytes {
-				return total, fmt.Errorf("archive exceeds %d extracted bytes", maxExtractBytes)
+			if header.Size < 0 || header.Size > limits.MaxExtractBytes || total+header.Size > limits.MaxExtractBytes {
+				return total, fmt.Errorf("archive exceeds %s extracted bytes", formatLimit(limits.MaxExtractBytes))
 			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 				return total, err
@@ -728,4 +800,11 @@ func extractTar(ctx context.Context, reader *tar.Reader, root, expectedRoot stri
 		return total, errors.New("archive does not contain the expected repository root")
 	}
 	return total, nil
+}
+
+func formatLimit(value int64) string {
+	if value > 0 && value%(1<<20) == 0 {
+		return fmt.Sprintf("%d MiB (%d bytes)", value>>20, value)
+	}
+	return fmt.Sprintf("%d bytes", value)
 }

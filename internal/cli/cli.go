@@ -102,6 +102,11 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	maxFiles := flags.Int("max-files", 5000, "maximum number of package entries")
 	maxFileSize := flags.Int64("max-file-size", 2<<20, "maximum bytes scanned per file")
 	maxTotalSize := flags.Int64("max-total-size", 20<<20, "maximum total bytes scanned")
+	sourceDefaults := source.DefaultLimits()
+	maxArchiveSize := flags.Int64("max-archive-size", sourceDefaults.MaxArchiveBytes, "maximum compressed GitHub archive bytes")
+	maxExtractSize := flags.Int64("max-extract-size", sourceDefaults.MaxExtractBytes, "maximum extracted source bytes")
+	maxUncompressedSize := flags.Int64("max-uncompressed-size", sourceDefaults.MaxUncompressedBytes, "maximum uncompressed archive bytes")
+	maxSourceEntries := flags.Int("max-source-entries", sourceDefaults.MaxExtractFiles, "maximum entries copied from a source archive")
 	flags.Usage = func() {
 		fmt.Fprintln(stderr, "Usage: skillguardrail scan SOURCE [options]")
 		fmt.Fprint(stderr, "\nSOURCE may be a local skill directory, SKILL.md, or public GitHub repository URL.\n\n")
@@ -138,7 +143,10 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	showProgress := format == report.FormatText && *output == "" && progress.EnabledForTerminal(stderr)
 	indicator := progress.New(stderr, showProgress)
 	indicator.Start(5, labels.resolve)
-	resolved, err := source.Resolve(ctx, flags.Arg(0))
+	resolved, err := source.ResolveWithLimits(ctx, flags.Arg(0), source.Limits{
+		MaxArchiveBytes: *maxArchiveSize, MaxExtractBytes: *maxExtractSize,
+		MaxUncompressedBytes: *maxUncompressedSize, MaxExtractFiles: *maxSourceEntries,
+	})
 	if err != nil {
 		indicator.Fail(labels.sourceFailed)
 		fmt.Fprintln(stderr, "skillguardrail: source:", report.SafeText(err.Error()))
@@ -207,6 +215,11 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	replace := flags.Bool("replace", false, "back up and atomically replace an existing skill")
 	stateDir := flags.String("state-dir", "", "private directory for authoritative receipts (advanced)")
 	noColor := flags.Bool("no-color", false, "disable ANSI color")
+	sourceDefaults := source.DefaultLimits()
+	maxArchiveSize := flags.Int64("max-archive-size", sourceDefaults.MaxArchiveBytes, "maximum compressed GitHub archive bytes")
+	maxExtractSize := flags.Int64("max-extract-size", sourceDefaults.MaxExtractBytes, "maximum extracted source bytes")
+	maxUncompressedSize := flags.Int64("max-uncompressed-size", sourceDefaults.MaxUncompressedBytes, "maximum uncompressed archive bytes")
+	maxSourceEntries := flags.Int("max-source-entries", sourceDefaults.MaxExtractFiles, "maximum entries copied from a source archive")
 	flags.Usage = func() {
 		fmt.Fprintln(stderr, "Usage: skillguardrail install SOURCE --target AGENT --yes [options]")
 		fmt.Fprint(stderr, "\nThe source is scanned in quarantine before any agent directory is modified.\n\n")
@@ -246,7 +259,10 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	showProgress := progress.EnabledForTerminal(stderr)
 	indicator := progress.New(stderr, showProgress)
 	indicator.Start(5, labels.resolve)
-	resolved, err := source.Resolve(ctx, flags.Arg(0))
+	resolved, err := source.ResolveWithLimits(ctx, flags.Arg(0), source.Limits{
+		MaxArchiveBytes: *maxArchiveSize, MaxExtractBytes: *maxExtractSize,
+		MaxUncompressedBytes: *maxUncompressedSize, MaxExtractFiles: *maxSourceEntries,
+	})
 	if err != nil {
 		indicator.Fail(labels.sourceFailed)
 		fmt.Fprintln(stderr, "skillguardrail: source:", report.SafeText(err.Error()))
