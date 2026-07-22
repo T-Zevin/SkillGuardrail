@@ -39,6 +39,7 @@ It is designed for portable `SKILL.md` packages used with Codex, Claude Code, Cu
   - [Release binaries](#release-binaries)
   - [Platform support](#platform-support)
 - [Quick start](#quick-start)
+- [Usage examples](#usage-examples)
 - [Command reference](#command-reference)
 - [Verdicts](#verdicts)
 - [Exit codes](#exit-codes)
@@ -221,6 +222,38 @@ skillguardrail --help
 skillguardrail scan --help
 skillguardrail install --help
 ```
+
+## Usage examples
+
+These examples scan the public [`T-Zevin/cfDNA-skills`](https://github.com/T-Zevin/cfDNA-skills) repository. A `PASS` verdict means that no known blocking signal matched the enabled rules; it is not a proof of safety and capabilities and provenance still require review.
+
+```bash
+skillguardrail scan https://github.com/T-Zevin/cfDNA-skills
+```
+
+### 1. Summary, coverage, and reproducible fingerprint
+
+<p align="center">
+  <img src="assets/examples/scan-en-summary.png" alt="English scan summary: cfDNA-skills passes with 0 of 100 known signals and 128 of 128 files analyzed" width="960">
+</p>
+
+The summary separates verdict, detected signals, content coverage, and the package fingerprint. `128/128` means every file received content analysis; it does not turn the result into a safety certificate.
+
+### 2. Project architecture preview
+
+<p align="center">
+  <img src="assets/examples/scan-en-tree.png" alt="English project architecture tree for cfDNA-skills" width="900">
+</p>
+
+The tree shows what was actually reviewed, including configuration, documentation, evaluation data, and nested directories.
+
+### 3. Multi-skill repository guidance
+
+<p align="center">
+  <img src="assets/examples/scan-en-multi-skill.png" alt="English SG-MAN-004 information finding for a multi-skill repository" width="900">
+</p>
+
+`SG-MAN-004` is informational: the repository contains multiple nested `SKILL.md` manifests, so review and install an individual child Skill rather than treating the repository root as one portable Skill.
 
 ## Command reference
 

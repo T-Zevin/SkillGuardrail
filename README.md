@@ -32,6 +32,7 @@ SkillGuardrail 是一个开源的 Agent Skills 安装前安全扫描器和受控
 - [安装](#安装)
   - [平台支持](#平台支持)
 - [使用](#使用)
+- [使用案例](#使用案例)
 - [命令与参数说明](#命令与参数说明)
 - [判定与退出码](#判定与退出码)
 - [相关工作](#相关工作)
@@ -148,6 +149,38 @@ skillguardrail verify ~/.codex/skills/my-skill
 默认权威 receipt 位于当前用户的 SkillGuardrail 配置状态目录。受控操作会验证目录所有者与父目录替换边界，并拒绝未清除的文件系统 ACL，避免出现 receipt 未记录的额外访问权限。备份或自动化场景可通过 `SKILLGUARDRAIL_STATE_HOME` 或安装、验证命令的 `--state-dir` 指定其他位置，但它必须保持私有并位于 Agent 的 Skill 发现目录之外。该机制用于发现本地漂移，并不是发布者签名；若同一用户权限下的进程可以同时改写 Skill 和外部状态目录，它仍可伪造本地历史。
 
 远程源支持公开 GitHub HTTPS 仓库。仓库根目录有 Skill，或只有一个嵌套 Skill 时可以直接扫描；多个嵌套 Skill 会保留仓库级结果，等待用户明确选择。
+
+## 使用案例
+
+以下案例扫描公开仓库 [`T-Zevin/cfDNA-skills`](https://github.com/T-Zevin/cfDNA-skills)。它展示的是静态规则扫描输出：`通过` 表示未命中已知阻断信号，不表示仓库没有剩余风险，仍应复核来源与能力。
+
+```bash
+skillguardrail scan https://github.com/T-Zevin/cfDNA-skills -cn
+```
+
+### 1. 扫描摘要：来源、覆盖率与可复核指纹
+
+<p align="center">
+  <img src="assets/examples/scan-cn-summary.png" alt="中文扫描摘要：cfDNA-skills 通过，已知信号 0/100，内容覆盖 128/128" width="880">
+</p>
+
+报告明确展示判定、已知信号、内容覆盖率和 SHA-256 包指纹；这里的 `128/128` 表示全部 128 个文件获得了内容分析，而不是“绝对安全”。
+
+### 2. 项目结构：先看工具实际审核了什么
+
+<p align="center">
+  <img src="assets/examples/scan-cn-tree.png" alt="中文项目结构树：cfDNA-skills 的目录和文件预览" width="820">
+</p>
+
+结构树让审阅者快速了解仓库包含的文档、配置、评测数据和嵌套目录，避免仅凭 README 决定是否安装。
+
+### 3. 多 Skill 仓库：信息提示而非恶意判定
+
+<p align="center">
+  <img src="assets/examples/scan-cn-multi-skill.png" alt="中文发现详情：SG-MAN-004 多 Skill 仓库信息提示" width="880">
+</p>
+
+该仓库包含多个嵌套 `SKILL.md`，因此 `SG-MAN-004` 以信息级别提示你分别扫描并安装具体子目录，而不会把正常的多 Skill 仓库误判为高风险。
 
 ## 命令与参数说明
 
