@@ -32,6 +32,7 @@ SkillGuardrail 是一个开源的 Agent Skills 安装前安全扫描器和受控
 - [安装](#安装)
   - [平台支持](#平台支持)
 - [使用](#使用)
+- [命令与参数说明](#命令与参数说明)
 - [判定与退出码](#判定与退出码)
 - [相关工作](#相关工作)
 - [许可证](#许可证)
@@ -147,6 +148,83 @@ skillguardrail verify ~/.codex/skills/my-skill
 默认权威 receipt 位于当前用户的 SkillGuardrail 配置状态目录。受控操作会验证目录所有者与父目录替换边界，并拒绝未清除的文件系统 ACL，避免出现 receipt 未记录的额外访问权限。备份或自动化场景可通过 `SKILLGUARDRAIL_STATE_HOME` 或安装、验证命令的 `--state-dir` 指定其他位置，但它必须保持私有并位于 Agent 的 Skill 发现目录之外。该机制用于发现本地漂移，并不是发布者签名；若同一用户权限下的进程可以同时改写 Skill 和外部状态目录，它仍可伪造本地历史。
 
 远程源支持公开 GitHub HTTPS 仓库。仓库根目录有 Skill，或只有一个嵌套 Skill 时可以直接扫描；多个嵌套 Skill 会保留仓库级结果，等待用户明确选择。
+
+## 命令与参数说明
+
+所有命令都可使用 `skillguardrail <command> --help` 查看运行版本的完整帮助。`SOURCE` 可以是本地 Skill 目录、本地 `SKILL.md`，或公开 GitHub 仓库根 URL；远程仓库只接受 `https://github.com/OWNER/REPO` 形式。
+
+### `scan SOURCE`：只扫描，不写入 Agent 目录
+
+```bash
+skillguardrail scan SOURCE [options]
+```
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `-cn` | 关闭 | 将人类可读文本报告切换为简体中文；JSON/SARIF 字段保持不变。 |
+| `--format text\|json\|sarif` | `text` | 选择报告格式。`json` 与 `sarif` 适用于 CI 或后续脚本。 |
+| `--output PATH` | 标准输出 | 将报告写入文件；使用 `-` 保持标准输出。写入文件时不显示交互进度条。 |
+| `--fail-on info\|low\|medium\|high\|critical` | `medium` | 发现达到该级别的信号时返回退出码 `1`。例如仅希望 High/critical 退出失败，可设为 `--fail-on high`。 |
+| `--timeout DURATION` | `20m` | 获取和扫描的总时间上限，如 `--timeout 25m`。 |
+| `--no-color` | 关闭 | 禁用 ANSI 颜色，适合日志、CI 或纯文本文件。 |
+
+**内容分析边界**：这些参数控制本地扫描量；超过边界的文件仍会纳入包指纹和结构检查，但不会完成完整文本分析。
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--max-files N` | `10000` | 包内最多扫描的条目数。 |
+| `--max-file-size BYTES` | `8388608`（8 MiB） | 单个文件可进行内容分析的最大字节数。 |
+| `--max-total-size BYTES` | `67108864`（64 MiB） | 所有内容分析文件合计的最大字节数。 |
+
+**GitHub 来源边界**：用于限制下载和解包阶段，防止不可信 archive 耗尽资源。
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--max-archive-size BYTES` | `67108864`（64 MiB） | 下载的压缩 GitHub archive 最大大小。 |
+| `--max-extract-size BYTES` | `134217728`（128 MiB） | 解包并复制到隔离区的文件总大小上限。 |
+| `--max-uncompressed-size BYTES` | `167772160`（160 MiB） | tar 解压数据流最大大小。 |
+| `--max-source-entries N` | `10000` | archive 最多允许的来源条目数。 |
+
+### `install SOURCE`：扫描、人工批准后受控安装
+
+```bash
+skillguardrail install SOURCE --target codex --yes [options]
+```
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--target codex\|claude\|cursor\|gemini\|openclaw` | 无 | 选择内置 Agent Skill 目录；与 `--dir` 至少提供一个。 |
+| `--dir PATH` | 无 | 指定自定义的 Skill 发现目录。 |
+| `--yes` | 关闭 | 必填确认项；没有它只会显示报告，不会写入文件。 |
+| `--allow-risk info\|low\|medium` | `medium` | 允许安装的最高复核级别；`block` 与 `critical` 永远不能绕过。 |
+| `--replace` | 关闭 | 安全备份并原子替换同名已安装 Skill。 |
+| `--state-dir PATH` | 工具默认私有状态目录 | 保存权威 receipt 的私有目录；Unix 上应为 `0700`，且位于 Agent Skill 目录之外。 |
+| `-cn`、`--no-color`、`--timeout DURATION` | — | 分别控制中文报告、颜色和总时间上限（安装默认 `15m`）。 |
+| `--max-archive-size`、`--max-extract-size`、`--max-uncompressed-size`、`--max-source-entries` | 同 `scan` | 调整 GitHub 获取和隔离阶段的资源边界。 |
+
+### `verify PATH`：验证受控安装后是否被篡改
+
+```bash
+skillguardrail verify PATH [options]
+skillguardrail verify NAME --target codex [options]
+```
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--target AGENT` | 无 | 当第一个位置参数是安装名称而不是路径时，用于定位内置 Agent 的 Skill 目录。 |
+| `--dir PATH` | 无 | 使用自定义 Skill 目录定位安装名称。 |
+| `--format text\|json` | `text` | 输出人类可读结果或机器可读 JSON。 |
+| `--state-dir PATH` | 工具默认私有状态目录 | 指定保存权威 receipt 的状态目录，必须与安装时一致。 |
+
+### 其他命令
+
+```bash
+skillguardrail --help
+skillguardrail scan --help
+skillguardrail install --help
+skillguardrail verify --help
+skillguardrail version
+```
 
 ## 判定与退出码
 

@@ -39,6 +39,7 @@ It is designed for portable `SKILL.md` packages used with Codex, Claude Code, Cu
   - [Release binaries](#release-binaries)
   - [Platform support](#platform-support)
 - [Quick start](#quick-start)
+- [Command reference](#command-reference)
 - [Verdicts](#verdicts)
 - [Exit codes](#exit-codes)
 - [Security model](#security-model)
@@ -220,6 +221,18 @@ skillguardrail --help
 skillguardrail scan --help
 skillguardrail install --help
 ```
+
+## Command reference
+
+Use `skillguardrail <command> --help` for the complete option list in the installed build. The primary Chinese README contains the detailed parameter reference; the main defaults are summarized below.
+
+| Command | Required input | Primary options |
+| --- | --- | --- |
+| `scan SOURCE` | local directory, `SKILL.md`, or public GitHub repository | `-cn`, `--format text\|json\|sarif`, `--output PATH`, `--fail-on`, `--timeout 20m`, `--no-color` |
+| `install SOURCE` | source plus `--target AGENT` or `--dir PATH` | `--yes`, `--allow-risk info\|low\|medium`, `--replace`, `--state-dir PATH`, `--timeout 15m` |
+| `verify PATH` | installed path, or a name with `--target` / `--dir` | `--format text\|json`, `--state-dir PATH` |
+
+`scan` also accepts bounded content-analysis controls: `--max-files 10000`, `--max-file-size 8388608`, and `--max-total-size 67108864`. Both `scan` and `install` accept GitHub archive controls: `--max-archive-size 67108864`, `--max-extract-size 134217728`, `--max-uncompressed-size 167772160`, and `--max-source-entries 10000`.
 
 ## Verdicts
 
