@@ -140,6 +140,11 @@ resolved, quarantined, and analyzed. Progress is written to stderr and is
 automatically disabled for JSON/SARIF output, redirected logs, and other
 non-interactive writers.
 
+The default scan timeout is 10 minutes (15 minutes for `install`) because
+public GitHub archives can be slow through proxies or rate-limited networks.
+Use `--timeout 20m` for a slower connection; GitHub API and archive GETs also
+retry transient connection failures a small number of times.
+
 Remote acquisition has bounded defaults: 64 MiB for the compressed GitHub
 archive, 128 MiB for extracted files, 160 MiB for the uncompressed tar stream,
 and 10,000 source entries. These limits prevent untrusted archives from

@@ -37,6 +37,7 @@ const (
 	hardMaxExtractFiles         = 100000
 	maxExtractDepth             = 32
 	maxCompressionRatio         = 100
+	maxGitHubAttempts           = 3
 )
 
 var (
@@ -362,15 +363,11 @@ func resolveGitHub(ctx context.Context, raw string, limits Limits) (*Resolved, e
 	}
 
 	archiveURL := "https://codeload.github.com/" + owner + "/" + repo + "/tar.gz/" + sha
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, archiveURL, nil)
-	if err != nil {
-		_ = cleanup()
-		return nil, fmt.Errorf("create archive request: %w", err)
-	}
-	req.Header.Set("Accept", "application/octet-stream")
-	req.Header.Set("Accept-Encoding", "identity")
-	req.Header.Set("User-Agent", "SkillGuardrail")
-	resp, err := client.Do(req)
+	resp, err := doGitHubGet(ctx, client, archiveURL, func(req *http.Request) {
+		req.Header.Set("Accept", "application/octet-stream")
+		req.Header.Set("Accept-Encoding", "identity")
+		req.Header.Set("User-Agent", "SkillGuardrail")
+	})
 	if err != nil {
 		_ = cleanup()
 		return nil, fmt.Errorf("download immutable GitHub archive: %w", err)
@@ -493,6 +490,46 @@ func isAllowedGitHubHost(host string) bool {
 	default:
 		return false
 	}
+}
+
+func doGitHubGet(ctx context.Context, client *http.Client, endpoint string, configure func(*http.Request)) (*http.Response, error) {
+	var lastErr error
+	for attempt := 0; attempt < maxGitHubAttempts; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return nil, err
+		}
+		if configure != nil {
+			configure(req)
+		}
+		resp, err := client.Do(req)
+		if err == nil {
+			if resp.StatusCode < http.StatusInternalServerError && resp.StatusCode != http.StatusTooManyRequests {
+				return resp, nil
+			}
+			lastErr = fmt.Errorf("HTTP %s", resp.Status)
+			_ = resp.Body.Close()
+		} else {
+			lastErr = err
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil, err
+			}
+		}
+		if attempt+1 == maxGitHubAttempts {
+			break
+		}
+		delay := time.Duration(1<<attempt) * 500 * time.Millisecond
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, lastErr
 }
 
 func guardedGitHubDialContext(baseDial dialContextFunc, lookup lookupIPFunc) dialContextFunc {
@@ -651,14 +688,11 @@ func (zeroWriter) Write(buffer []byte) (int, error) {
 
 func resolveCommit(ctx context.Context, client *http.Client, owner, repo string) (string, error) {
 	endpoint := "https://api.github.com/repos/" + owner + "/" + repo + "/commits/HEAD"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return "", fmt.Errorf("create GitHub API request: %w", err)
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("User-Agent", "SkillGuardrail")
-	resp, err := client.Do(req)
+	resp, err := doGitHubGet(ctx, client, endpoint, func(req *http.Request) {
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+		req.Header.Set("User-Agent", "SkillGuardrail")
+	})
 	if err != nil {
 		return "", fmt.Errorf("resolve immutable GitHub commit: %w", err)
 	}

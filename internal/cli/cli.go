@@ -97,7 +97,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	chinese := flags.Bool("cn", false, "render the human-readable report in Simplified Chinese")
 	output := flags.String("output", "", "write the report to a file")
 	failOnValue := flags.String("fail-on", "medium", "return exit 1 at this severity or higher")
-	timeout := flags.Duration("timeout", 120*time.Second, "maximum fetch and scan duration")
+	timeout := flags.Duration("timeout", 10*time.Minute, "maximum fetch and scan duration")
 	noColor := flags.Bool("no-color", false, "disable ANSI color")
 	maxFiles := flags.Int("max-files", 5000, "maximum number of package entries")
 	maxFileSize := flags.Int64("max-file-size", 2<<20, "maximum bytes scanned per file")
@@ -149,7 +149,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	})
 	if err != nil {
 		indicator.Fail(labels.sourceFailed)
-		fmt.Fprintln(stderr, "skillguardrail: source:", report.SafeText(err.Error()))
+		fmt.Fprintln(stderr, "skillguardrail: source:", report.SafeText(sourceErrorMessage(err, *timeout)))
 		return ExitError
 	}
 	defer resolved.Cleanup()
@@ -210,7 +210,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	directory := flags.String("dir", "", "custom skill discovery directory")
 	allowedValue := flags.String("allow-risk", "medium", "maximum review severity: info, low, or medium (block/critical are never allowed)")
 	chinese := flags.Bool("cn", false, "render the human-readable report in Simplified Chinese")
-	timeout := flags.Duration("timeout", 180*time.Second, "maximum fetch, scan, and install duration")
+	timeout := flags.Duration("timeout", 15*time.Minute, "maximum fetch, scan, and install duration")
 	yes := flags.Bool("yes", false, "confirm the non-interactive installation")
 	replace := flags.Bool("replace", false, "back up and atomically replace an existing skill")
 	stateDir := flags.String("state-dir", "", "private directory for authoritative receipts (advanced)")
@@ -265,7 +265,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	})
 	if err != nil {
 		indicator.Fail(labels.sourceFailed)
-		fmt.Fprintln(stderr, "skillguardrail: source:", report.SafeText(err.Error()))
+		fmt.Fprintln(stderr, "skillguardrail: source:", report.SafeText(sourceErrorMessage(err, *timeout)))
 		return ExitError
 	}
 	defer resolved.Cleanup()
@@ -434,6 +434,13 @@ func interspersed(args []string, boolFlags map[string]bool) []string {
 		return append(result, positionals...)
 	}
 	return append(flags, positionals...)
+}
+
+func sourceErrorMessage(err error, timeout time.Duration) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Sprintf("%s; increase --timeout (current limit %s)", err, timeout)
+	}
+	return err.Error()
 }
 
 func writeRootHelp(w io.Writer) {
