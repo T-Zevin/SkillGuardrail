@@ -14,6 +14,7 @@ import (
 
 	"github.com/T-Zevin/SkillGuardrail/internal/install"
 	"github.com/T-Zevin/SkillGuardrail/internal/model"
+	"github.com/T-Zevin/SkillGuardrail/internal/progress"
 	"github.com/T-Zevin/SkillGuardrail/internal/report"
 	"github.com/T-Zevin/SkillGuardrail/internal/scanner"
 	"github.com/T-Zevin/SkillGuardrail/internal/source"
@@ -26,6 +27,43 @@ const (
 	ExitError     = 2
 	ExitCancelled = 3
 )
+
+type progressLabels struct {
+	resolve       string
+	scan          string
+	report        string
+	policy        string
+	install       string
+	installed     string
+	discover      string
+	completed     string
+	sourceFailed  string
+	scanFailed    string
+	reportFailed  string
+	incomplete    string
+	blocked       string
+	waiting       string
+	installFailed string
+}
+
+func labelsFor(language report.Language) progressLabels {
+	if language == report.LanguageChinese {
+		return progressLabels{
+			resolve: "获取并隔离来源", scan: "扫描隔离包", report: "整理报告与完整性指纹",
+			policy: "检查安装策略", install: "原子安装并写入收据", installed: "安装完成", discover: "发现唯一 Skill 子目录", completed: "扫描完成",
+			sourceFailed: "获取来源失败", scanFailed: "扫描失败", reportFailed: "报告生成失败",
+			incomplete: "扫描不完整", blocked: "扫描完成，安装被阻断", waiting: "扫描完成，等待确认",
+			installFailed: "安装失败",
+		}
+	}
+	return progressLabels{
+		resolve: "Resolving and quarantining source", scan: "Scanning quarantined package", report: "Preparing report and fingerprint",
+		policy: "Checking install policy", install: "Installing atomically and writing receipt", installed: "Installation complete", discover: "Found the only nested Skill", completed: "Scan complete",
+		sourceFailed: "Source resolution failed", scanFailed: "Scan failed", reportFailed: "Report generation failed",
+		incomplete: "Scan incomplete", blocked: "Scan complete; installation blocked", waiting: "Scan complete; awaiting confirmation",
+		installFailed: "Installation failed",
+	}
+}
 
 func Run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
@@ -56,9 +94,10 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("scan", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	formatValue := flags.String("format", "text", "report format: text, json, or sarif")
+	chinese := flags.Bool("cn", false, "render the human-readable report in Simplified Chinese")
 	output := flags.String("output", "", "write the report to a file")
 	failOnValue := flags.String("fail-on", "medium", "return exit 1 at this severity or higher")
-	timeout := flags.Duration("timeout", 45*time.Second, "maximum fetch and scan duration")
+	timeout := flags.Duration("timeout", 120*time.Second, "maximum fetch and scan duration")
 	noColor := flags.Bool("no-color", false, "disable ANSI color")
 	maxFiles := flags.Int("max-files", 5000, "maximum number of package entries")
 	maxFileSize := flags.Int64("max-file-size", 2<<20, "maximum bytes scanned per file")
@@ -68,7 +107,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stderr, "\nSOURCE may be a local skill directory, SKILL.md, or public GitHub repository URL.\n\n")
 		flags.PrintDefaults()
 	}
-	args = interspersed(args, map[string]bool{"no-color": true})
+	args = interspersed(args, map[string]bool{"cn": true, "no-color": true})
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return ExitOK
@@ -84,6 +123,10 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skillguardrail:", report.SafeText(err.Error()))
 		return ExitError
 	}
+	language := report.LanguageEnglish
+	if *chinese {
+		language = report.LanguageChinese
+	}
 	failOn, err := model.ParseSeverity(*failOnValue)
 	if err != nil {
 		fmt.Fprintln(stderr, "skillguardrail:", report.SafeText(err.Error()))
@@ -91,20 +134,43 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
+	labels := labelsFor(language)
+	showProgress := format == report.FormatText && *output == "" && progress.EnabledForTerminal(stderr)
+	indicator := progress.New(stderr, showProgress)
+	indicator.Start(5, labels.resolve)
 	resolved, err := source.Resolve(ctx, flags.Arg(0))
 	if err != nil {
+		indicator.Fail(labels.sourceFailed)
 		fmt.Fprintln(stderr, "skillguardrail: source:", report.SafeText(err.Error()))
 		return ExitError
 	}
 	defer resolved.Cleanup()
+	indicator.Set(45, labels.scan)
 	config := scanner.DefaultConfig()
 	config.MaxFiles = *maxFiles
 	config.MaxFileSize = *maxFileSize
 	config.MaxTotalSize = *maxTotalSize
-	scan, err := scanner.New(config).Scan(ctx, resolved.Root, resolved.Source, version.Version)
+	engine := scanner.New(config)
+	if selectedRoot, selected, selectErr := engine.SelectSkillRoot(resolved.Root); selectErr != nil {
+		indicator.Fail(labels.scanFailed)
+		fmt.Fprintln(stderr, "skillguardrail: discover skill root:", report.SafeText(selectErr.Error()))
+		return ExitError
+	} else if selected {
+		resolved.Root = selectedRoot
+		indicator.Set(35, labels.discover)
+	}
+	scan, err := engine.Scan(ctx, resolved.Root, resolved.Source, version.Version)
 	if err != nil {
+		indicator.Fail(labels.scanFailed)
 		fmt.Fprintln(stderr, "skillguardrail: scan incomplete:", report.SafeText(err.Error()))
 		return ExitError
+	}
+	indicator.Set(88, labels.report)
+	incomplete := scan.Fingerprint == ""
+	if incomplete {
+		indicator.Fail(labels.incomplete)
+	} else {
+		indicator.Finish(labels.completed)
 	}
 	w, closeOutput, err := reportWriter(*output, stdout)
 	if err != nil {
@@ -115,11 +181,11 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		defer closeOutput()
 	}
 	color := format == report.FormatText && *output == "" && !*noColor && os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != ""
-	if err := report.Write(w, scan, format, color); err != nil {
+	if err := report.WriteLocalized(w, scan, format, color, language); err != nil {
 		fmt.Fprintln(stderr, "skillguardrail: write report:", report.SafeText(err.Error()))
 		return ExitError
 	}
-	if scan.Fingerprint == "" {
+	if incomplete {
 		fmt.Fprintln(stderr, "skillguardrail: scan incomplete: no complete-package fingerprint was produced")
 		return ExitError
 	}
@@ -135,7 +201,8 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	target := flags.String("target", "", "agent target: codex, claude, cursor, gemini, or openclaw")
 	directory := flags.String("dir", "", "custom skill discovery directory")
 	allowedValue := flags.String("allow-risk", "medium", "maximum review severity: info, low, or medium (block/critical are never allowed)")
-	timeout := flags.Duration("timeout", 60*time.Second, "maximum fetch, scan, and install duration")
+	chinese := flags.Bool("cn", false, "render the human-readable report in Simplified Chinese")
+	timeout := flags.Duration("timeout", 180*time.Second, "maximum fetch, scan, and install duration")
 	yes := flags.Bool("yes", false, "confirm the non-interactive installation")
 	replace := flags.Bool("replace", false, "back up and atomically replace an existing skill")
 	stateDir := flags.String("state-dir", "", "private directory for authoritative receipts (advanced)")
@@ -145,7 +212,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stderr, "\nThe source is scanned in quarantine before any agent directory is modified.\n\n")
 		flags.PrintDefaults()
 	}
-	args = interspersed(args, map[string]bool{"yes": true, "replace": true, "no-color": true})
+	args = interspersed(args, map[string]bool{"cn": true, "yes": true, "replace": true, "no-color": true})
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return ExitOK
@@ -161,6 +228,10 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skillguardrail:", report.SafeText(err.Error()))
 		return ExitError
 	}
+	language := report.LanguageEnglish
+	if *chinese {
+		language = report.LanguageChinese
+	}
 	if allowed.Rank() > model.SeverityMedium.Rank() {
 		fmt.Fprintln(stderr, "skillguardrail: --allow-risk may be info, low, or medium; block verdicts require a future rule-specific policy")
 		return ExitError
@@ -171,39 +242,63 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
+	labels := labelsFor(language)
+	showProgress := progress.EnabledForTerminal(stderr)
+	indicator := progress.New(stderr, showProgress)
+	indicator.Start(5, labels.resolve)
 	resolved, err := source.Resolve(ctx, flags.Arg(0))
 	if err != nil {
+		indicator.Fail(labels.sourceFailed)
 		fmt.Fprintln(stderr, "skillguardrail: source:", report.SafeText(err.Error()))
 		return ExitError
 	}
 	defer resolved.Cleanup()
-	scan, err := scanner.Scan(ctx, resolved.Root, resolved.Source, version.Version)
+	engine := scanner.New(scanner.DefaultConfig())
+	if selectedRoot, selected, selectErr := engine.SelectSkillRoot(resolved.Root); selectErr != nil {
+		indicator.Fail(labels.scanFailed)
+		fmt.Fprintln(stderr, "skillguardrail: discover skill root:", report.SafeText(selectErr.Error()))
+		return ExitError
+	} else if selected {
+		resolved.Root = selectedRoot
+		indicator.Set(35, labels.discover)
+	}
+	indicator.Set(45, labels.scan)
+	scan, err := engine.Scan(ctx, resolved.Root, resolved.Source, version.Version)
 	if err != nil {
+		indicator.Fail(labels.scanFailed)
 		fmt.Fprintln(stderr, "skillguardrail: scan incomplete:", report.SafeText(err.Error()))
 		return ExitError
 	}
+	indicator.Set(78, labels.report)
 	color := !*noColor && os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != ""
-	if err := report.Write(stdout, scan, report.FormatText, color); err != nil {
+	if err := report.WriteLocalized(stdout, scan, report.FormatText, color, language); err != nil {
+		indicator.Fail(labels.reportFailed)
 		fmt.Fprintln(stderr, "skillguardrail: write report:", report.SafeText(err.Error()))
 		return ExitError
 	}
+	indicator.Set(88, labels.policy)
 	if scan.Fingerprint == "" {
+		indicator.Fail(labels.incomplete)
 		fmt.Fprintln(stderr, "skillguardrail: scan incomplete: no complete-package fingerprint was produced; no files changed")
 		return ExitError
 	}
 	if err := scan.CheckInstallPolicy(allowed); err != nil {
+		indicator.Finish(labels.blocked)
 		fmt.Fprintf(stderr, "skillguardrail: installation denied: %s\n", report.SafeText(err.Error()))
 		return ExitPolicy
 	}
 	if !*yes {
+		indicator.Finish(labels.waiting)
 		fmt.Fprintln(stderr, "skillguardrail: no files changed; review the report and rerun with --yes to install")
 		return ExitCancelled
 	}
+	indicator.Set(92, labels.install)
 	result, err := install.Install(ctx, resolved.Root, scan, install.Options{
 		Target: *target, Directory: *directory, AllowedRisk: allowed,
 		Replace: *replace, ToolVersion: version.Version, StateDir: *stateDir,
 	})
 	if err != nil {
+		indicator.Fail(labels.installFailed)
 		if strings.Contains(err.Error(), "policy denies") || strings.Contains(err.Error(), "never be overridden") || strings.Contains(err.Error(), "violates policy") || strings.Contains(err.Error(), "non-overridable") {
 			fmt.Fprintln(stderr, "skillguardrail: installation denied:", report.SafeText(err.Error()))
 			return ExitPolicy
@@ -211,6 +306,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skillguardrail: install:", report.SafeText(err.Error()))
 		return ExitError
 	}
+	indicator.Finish(labels.installed)
 	fmt.Fprintf(stdout, "\nINSTALLED %s\nRECEIPT   %s\nMANIFEST  %s\n", report.SafeText(result.Path), report.SafeText(result.ReceiptPath), report.SafeText(filepath.Join(result.Path, install.LockFileName)))
 	if result.BackupPath != "" {
 		fmt.Fprintf(stdout, "BACKUP    %s\n", report.SafeText(result.BackupPath))

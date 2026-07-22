@@ -40,6 +40,17 @@ func TestScanJSONWithFlagAfterSource(t *testing.T) {
 	}
 }
 
+func TestScanChineseFlagAfterSource(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"scan", filepath.Join("..", "..", "testdata", "safe-skill"), "-cn", "--no-color"}, &stdout, &stderr)
+	if code != ExitOK {
+		t.Fatalf("exit=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "扫描摘要") {
+		t.Fatalf("not Chinese report: %s", stdout.String())
+	}
+}
+
 func TestScanSafeWithFailOnInfo(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"scan", filepath.Join("..", "..", "testdata", "safe-skill"), "--fail-on", "info", "--no-color"}, &stdout, &stderr)

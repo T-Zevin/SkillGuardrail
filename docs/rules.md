@@ -9,11 +9,12 @@ This catalog documents the deterministic rules shipped in the initial `builtin-v
 | `SG-MAN-001` | High | `SKILL.md` does not declare a name |
 | `SG-MAN-002` | High | `SKILL.md` does not declare a description |
 | `SG-MAN-003` | High | A root `SKILL.md` is missing |
+| `SG-MAN-004` | Informational | No root `SKILL.md` is present, but nested Skill manifests indicate a multi-skill repository |
 | `SG-LIMIT-001` | High | The package exceeds the configured entry limit; files and directories both count |
-| `SG-LIMIT-002` | High | The package exceeds the configured total-byte limit |
+| `SG-LIMIT-002` | Info | The package exceeds the content-analysis byte budget; remaining files are fingerprinted and structurally reviewed without text rules. |
 | `SG-LIMIT-003` | High/Critical | Finding retention exceeded the package-wide or per-rule/per-path limit; additional evidence was suppressed |
-| `SG-FILE-001` | High | A file is too large to inspect completely |
-| `SG-FILE-002` | Low/Medium/High | The package embeds media, opaque, nested archive, or executable binary content |
+| `SG-FILE-001` | Info | A file exceeds the text-analysis budget. Its metadata and full-package fingerprint are still checked, while content rules are skipped for that file. |
+| `SG-FILE-002` | Info/Medium/High | The package embeds opaque, native-library, nested archive, or executable binary content. Native libraries and common document resources are contextual findings; common presentation assets (PNG/JPEG/SVG), `.DS_Store`, `.xlsx`, and generated `__pycache__/*.pyc` files are retained in the fingerprint and architecture tree but do not create a finding by default. |
 | `SG-FILE-003` | Medium/High | A symbolic link is present or escapes the package |
 | `SG-FILE-005` | High | A path or file could not be inspected |
 | `SG-FILE-006` | High | A device, socket, FIFO, or special entry is present |

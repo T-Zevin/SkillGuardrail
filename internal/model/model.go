@@ -100,22 +100,24 @@ type SourceInfo struct {
 }
 
 type ScanReport struct {
-	SchemaVersion string         `json:"schema_version"`
-	Tool          string         `json:"tool"`
-	ToolVersion   string         `json:"tool_version"`
-	ScannedAt     time.Time      `json:"scanned_at"`
-	Source        SourceInfo     `json:"source"`
-	Root          string         `json:"root"`
-	Metadata      SkillMetadata  `json:"metadata"`
-	FilesScanned  int            `json:"files_scanned"`
-	BytesScanned  int64          `json:"bytes_scanned"`
-	Fingerprint   string         `json:"fingerprint"`
-	RiskScore     int            `json:"risk_score"`
-	Highest       Severity       `json:"highest_severity"`
-	Verdict       Verdict        `json:"verdict"`
-	Findings      []Finding      `json:"findings"`
-	Capabilities  []Capability   `json:"capabilities"`
-	Stats         map[string]int `json:"stats"`
+	SchemaVersion    string         `json:"schema_version"`
+	Tool             string         `json:"tool"`
+	ToolVersion      string         `json:"tool_version"`
+	ScannedAt        time.Time      `json:"scanned_at"`
+	Source           SourceInfo     `json:"source"`
+	Root             string         `json:"root"`
+	Metadata         SkillMetadata  `json:"metadata"`
+	FilesScanned     int            `json:"files_scanned"`
+	FilesAnalyzed    int            `json:"files_analyzed"`
+	UninspectedFiles int            `json:"uninspected_files,omitempty"`
+	BytesScanned     int64          `json:"bytes_scanned"`
+	Fingerprint      string         `json:"fingerprint"`
+	RiskScore        int            `json:"risk_score"`
+	Highest          Severity       `json:"highest_severity"`
+	Verdict          Verdict        `json:"verdict"`
+	Findings         []Finding      `json:"findings"`
+	Capabilities     []Capability   `json:"capabilities"`
+	Stats            map[string]int `json:"stats"`
 }
 
 func NewReport(version string, source SourceInfo, root string) ScanReport {

@@ -96,12 +96,27 @@ skillguardrail scan ./my-skill
 skillguardrail scan https://github.com/example/useful-skill
 ```
 
+如果仓库根目录没有 `SKILL.md`，但只包含一个嵌套 Skill，SkillGuardrail 会自动选择该 Skill 目录进行扫描。若仓库包含多个嵌套 Skill，则保留仓库级扫描结果，避免在没有用户确认时自动选错安装对象。
+
+在交互式终端中，扫描会显示阶段进度条，提示当前处于来源解析、隔离获取或静态分析阶段。进度信息写入 stderr；JSON、SARIF、重定向日志和其他非交互输出不会被进度内容污染。
+
+超过文本分析预算的大文件仍会纳入完整包指纹；报告会把风险评分、扫描状态和内容覆盖率分开，并列出仅完成元数据/哈希检查的文件。
+
 输出 JSON 或 SARIF：
 
 ```bash
 skillguardrail scan ./my-skill --format json
 skillguardrail scan ./my-skill --format sarif --output skillguardrail.sarif
 ```
+
+文本报告默认使用英文；加上 `-cn` 后切换为简体中文，并会以摘要表、评分条、项目结构树、能力表和发现表展示结果：
+
+```bash
+skillguardrail scan ./my-skill -cn
+```
+
+`-cn` 只影响人类可读的文本输出；JSON 和 SARIF 保持稳定的机器可读字段，适合 CI 和下游脚本。
+终端支持颜色时默认会启用颜色；只有在日志或 CI 需要纯文本时才添加 `--no-color`。
 
 扫描通过后安装到 Codex：
 
@@ -120,7 +135,7 @@ skillguardrail verify ~/.codex/skills/my-skill
 
 默认权威 receipt 位于当前用户的 SkillGuardrail 配置状态目录。受控操作会验证目录所有者与父目录替换边界，并拒绝未清除的文件系统 ACL，避免出现 receipt 未记录的额外访问权限。备份或自动化场景可通过 `SKILLGUARDRAIL_STATE_HOME` 或安装、验证命令的 `--state-dir` 指定其他位置，但它必须保持私有并位于 Agent 的 Skill 发现目录之外。该机制用于发现本地漂移，并不是发布者签名；若同一用户权限下的进程可以同时改写 Skill 和外部状态目录，它仍可伪造本地历史。
 
-初版远程源只支持公开 GitHub HTTPS 仓库，并要求仓库根目录对应一个可移植 Skill。
+远程源支持公开 GitHub HTTPS 仓库。仓库根目录有 Skill，或只有一个嵌套 Skill 时可以直接扫描；多个嵌套 Skill 会保留仓库级结果，等待用户明确选择。
 
 ## 判定与退出码
 

@@ -89,6 +89,60 @@ func New(config Config) *Scanner {
 	return &Scanner{config: config, ignored: ignored}
 }
 
+// SelectSkillRoot finds the installable Skill root inside a repository. A
+// repository with exactly one nested SKILL.md is treated as a single Skill;
+// repositories with several Skill manifests are left at their repository root
+// so the report can show all candidates instead of silently choosing one.
+func (s *Scanner) SelectSkillRoot(root string) (string, bool, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve skill root: %w", err)
+	}
+	info, err := os.Lstat(absRoot)
+	if err != nil {
+		return "", false, fmt.Errorf("open skill root: %w", err)
+	}
+	if !info.IsDir() {
+		return absRoot, false, nil
+	}
+	for _, name := range []string{"SKILL.md", "skill.md"} {
+		if candidate := filepath.Join(absRoot, name); fileExists(candidate) {
+			return absRoot, false, nil
+		}
+	}
+
+	var candidates []string
+	if err := filepath.WalkDir(absRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path != absRoot && s.skipEntry(absRoot, path, entry) {
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if isSkillManifestName(entry.Name()) {
+			candidates = append(candidates, filepath.Dir(path))
+		}
+		return nil
+	}); err != nil {
+		return "", false, err
+	}
+	if len(candidates) == 1 {
+		return candidates[0], true, nil
+	}
+	return absRoot, false, nil
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
 // Scan uses DefaultConfig. Call New when custom resource limits are needed.
 func Scan(ctx context.Context, root string, source model.SourceInfo, toolVersion string) (model.ScanReport, error) {
 	return New(DefaultConfig()).Scan(ctx, root, source, toolVersion)
@@ -176,6 +230,9 @@ func (s *Scanner) Scan(ctx context.Context, root string, source model.SourceInfo
 				"Remove the special entry and package only regular files.", "high")
 			return nil
 		}
+		if !state.rootIsFile && filepath.Clean(filepath.Dir(path)) != filepath.Clean(absRoot) && isSkillManifestName(filepath.Base(path)) {
+			state.nestedManifests++
+		}
 		if entryInfo.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 {
 			state.addFileFinding(path, 0, "SG-FILE-007", "Privileged executable bit", "file-safety", model.SeverityCritical,
 				"The file has a setuid or setgid bit that can change execution privileges.", entryInfo.Mode().String(),
@@ -184,19 +241,20 @@ func (s *Scanner) Scan(ctx context.Context, root string, source model.SourceInfo
 
 		state.totalSize += entryInfo.Size()
 		if state.totalSize > s.config.MaxTotalSize {
-			state.incomplete = true
-			state.addFileFinding(path, 0, "SG-LIMIT-002", "Package size limit exceeded", "scan-integrity", model.SeverityHigh,
-				"The complete package could not be content-scanned within the configured byte limit.",
-				fmt.Sprintf("limit=%d bytes", s.config.MaxTotalSize), "Remove generated artifacts or raise the limit and scan again.", "high")
-			state.halted = true
-			return fs.SkipAll
+			state.uninspectedFiles++
+			report.UninspectedFiles = state.uninspectedFiles
+			state.addFileFinding(path, 0, "SG-LIMIT-002", "Content budget reached", "scan-coverage", model.SeverityInfo,
+				"The package is larger than the content-analysis budget. Remaining files are still fingerprinted and structurally reviewed, but content rules are not run on them.",
+				fmt.Sprintf("limit=%d bytes", s.config.MaxTotalSize), "Review the remaining files' provenance or raise --max-total-size for deeper content analysis.", "high")
+			return nil
 		}
 		if entryInfo.Size() > s.config.MaxFileSize {
-			state.incomplete = true
-			state.addFileFinding(path, 0, "SG-FILE-001", "Oversized file", "file-safety", model.SeverityHigh,
-				"The file is too large for content inspection and may conceal a payload.",
+			state.uninspectedFiles++
+			report.UninspectedFiles = state.uninspectedFiles
+			state.addFileFinding(path, 0, "SG-FILE-001", "Content inspection skipped", "scan-coverage", model.SeverityInfo,
+				"The file is larger than the text-analysis budget. Its metadata and full-package fingerprint are still checked, but content rules were not run on its bytes.",
 				fmt.Sprintf("size=%d bytes; limit=%d bytes", entryInfo.Size(), s.config.MaxFileSize),
-				"Remove generated or opaque content, or explicitly raise the scan limit.", "high")
+				"Review the file's provenance and checksum, or raise --max-file-size when source inspection is required.", "high")
 			return nil
 		}
 
@@ -218,23 +276,33 @@ func (s *Scanner) Scan(ctx context.Context, root string, source model.SourceInfo
 		}
 		state.totalSize += int64(len(data)) - entryInfo.Size()
 		if state.totalSize > s.config.MaxTotalSize {
-			state.incomplete = true
-			state.addFileFinding(path, 0, "SG-LIMIT-002", "Package size limit exceeded", "scan-integrity", model.SeverityHigh,
-				"The package grew while it was being scanned and exceeded the configured byte limit.",
-				fmt.Sprintf("limit=%d bytes", s.config.MaxTotalSize), "Stop concurrent writers or raise the limit and scan the complete package again.", "high")
-			state.halted = true
-			return fs.SkipAll
+			state.uninspectedFiles++
+			report.UninspectedFiles = state.uninspectedFiles
+			state.addFileFinding(path, 0, "SG-LIMIT-002", "Content budget reached", "scan-coverage", model.SeverityInfo,
+				"The package grew while it was being scanned and exceeded the content-analysis budget. Its full-package fingerprint remains available.",
+				fmt.Sprintf("limit=%d bytes", s.config.MaxTotalSize), "Stop concurrent writers or raise --max-total-size for deeper content analysis.", "high")
+			return nil
 		}
 		report.BytesScanned += int64(len(data))
+		report.FilesAnalyzed++
 		if isManifestCandidate(absRoot, path, state.rootIsFile) {
 			state.manifestData[path] = data
 		}
 		if binaryKind, binary := classifyBinary(path, data); binary {
+			if isBenignBinaryArtifact(path, binaryKind) {
+				// Common presentation assets and generated local metadata are not
+				// executable Skill instructions. Keep them in the fingerprint and
+				// architecture tree, but do not turn them into security findings.
+				return nil
+			}
 			severity := model.SeverityMedium
 			title := "Opaque binary file"
 			if binaryKind == "media" {
 				severity = model.SeverityLow
 				title = "Opaque media asset"
+			} else if binaryKind == "native-library" {
+				severity = model.SeverityMedium
+				title = "Native library dependency"
 			} else if binaryKind == "archive" {
 				severity = model.SeverityHigh
 				title = "Nested archive"
@@ -280,6 +348,12 @@ func (s *Scanner) Scan(ctx context.Context, root string, source model.SourceInfo
 				Recommendation: "Add a clear description between 1 and 1024 characters.",
 			})
 		}
+	} else if state.nestedManifests > 0 {
+		state.addFinding(model.Finding{
+			RuleID: "SG-MAN-004", Title: "Multi-skill repository", Description: "The repository has no root SKILL.md but contains nested Skill manifests; scan each child Skill before installation.",
+			Severity: model.SeverityInfo, Category: "manifest", Confidence: "high", Location: model.Location{Path: "."},
+			Evidence: fmt.Sprintf("nested-skill-manifests=%d", state.nestedManifests), Recommendation: "Scan and install an individual child directory containing its own SKILL.md.",
+		})
 	} else {
 		state.addFinding(model.Finding{
 			RuleID: "SG-MAN-003", Title: "SKILL.md not found", Description: "The package is not a portable Agent Skill without a root SKILL.md manifest.",
@@ -287,11 +361,12 @@ func (s *Scanner) Scan(ctx context.Context, root string, source model.SourceInfo
 			Recommendation: "Add a valid root SKILL.md before installation.",
 		})
 	}
-	if !state.incomplete {
-		fingerprint, fingerprintErr := s.fingerprint(ctx, absRoot)
-		if fingerprintErr != nil {
+	fingerprint, fingerprintErr := s.fingerprint(ctx, absRoot)
+	if fingerprintErr != nil {
+		if !state.incomplete {
 			return report, fmt.Errorf("fingerprint skill package: %w", fingerprintErr)
 		}
+	} else {
 		report.Fingerprint = fingerprint
 	}
 	if err := ctx.Err(); err != nil {
@@ -315,6 +390,8 @@ type scanState struct {
 	findingTotal      int
 	findingLimitIndex int
 	manifestData      map[string][]byte
+	nestedManifests   int
+	uninspectedFiles  int
 }
 
 func (s *Scanner) skipDirectory(name string) bool {
@@ -385,9 +462,10 @@ func (state *scanState) inspectText(ctx context.Context, path string, data []byt
 				return err
 			}
 			if evidence, ok := rule.match(line); ok {
+				severity := contextualRuleSeverity(rule, rel)
 				state.addFinding(model.Finding{
 					RuleID: rule.id, Title: rule.title, Description: rule.description,
-					Severity: rule.severity, Category: rule.category, Confidence: rule.confidence,
+					Severity: severity, Category: rule.category, Confidence: rule.confidence,
 					Location: model.Location{Path: rel, Line: lineNo, Column: firstColumn(line, evidence)},
 					Evidence: sanitizeEvidence(evidence), Recommendation: rule.recommendation,
 				})
@@ -425,6 +503,34 @@ func (state *scanState) inspectText(ctx context.Context, path string, data []byt
 		return err
 	}
 	return ctx.Err()
+}
+
+func contextualRuleSeverity(rule rule, path string) model.Severity {
+	severity := rule.severity
+	// Prompt-injection text in an instruction-bearing document is materially
+	// different from the same words inside a vendored parser or Cython source.
+	// Keep the signal, but lower its default impact outside human-facing skill
+	// instructions so ordinary dependencies do not become install blockers.
+	if strings.HasPrefix(rule.id, "SG-PI-") && !isInstructionFile(path) && severity.Rank() > model.SeverityMedium.Rank() {
+		return model.SeverityMedium
+	}
+	if rule.id == "SG-EXEC-005" && isVendoredDependencyPath(path) && severity.Rank() > model.SeverityMedium.Rank() {
+		return model.SeverityMedium
+	}
+	return severity
+}
+
+func isInstructionFile(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	if base == "skill.md" || base == "readme.md" || base == "readme_en.md" {
+		return true
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".md", ".markdown", ".txt", ".yaml", ".yml", ".json", ".toml":
+		return true
+	default:
+		return false
+	}
 }
 
 func (state *scanState) addFileFinding(path string, line int, id, title, category string, severity model.Severity, description, evidence, recommendation, confidence string) {
@@ -489,12 +595,11 @@ func firstColumn(line, evidence string) int {
 }
 
 func classifyBinary(path string, data []byte) (string, bool) {
-	if executableMagic(data) {
-		return "executable", true
-	}
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
-	case ".exe", ".dll", ".so", ".dylib", ".bin", ".o", ".a", ".class", ".jar", ".wasm", ".dmg", ".pkg":
+	case ".dll", ".so", ".dylib", ".pyd":
+		return "native-library", true
+	case ".exe", ".bin", ".o", ".a", ".class", ".jar", ".wasm", ".dmg", ".pkg":
 		return "executable", true
 	case ".pyc":
 		return "executable", true
@@ -502,6 +607,9 @@ func classifyBinary(path string, data []byte) (string, bool) {
 		return "archive", true
 	case ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp":
 		return "media", true
+	}
+	if executableMagic(data) {
+		return "executable", true
 	}
 	sample := data
 	if len(sample) > 8192 {
@@ -511,6 +619,40 @@ func classifyBinary(path string, data []byte) (string, bool) {
 		return "opaque", true
 	}
 	return "", false
+}
+
+func isBenignBinaryArtifact(path, kind string) bool {
+	if kind == "media" {
+		return true
+	}
+	base := filepath.Base(path)
+	if base == ".DS_Store" {
+		return true
+	}
+	ext := strings.ToLower(filepath.Ext(path))
+	if kind == "opaque" && ext == ".xlsx" {
+		return true
+	}
+	if kind == "opaque" {
+		switch ext {
+		case ".docx", ".pptx", ".odt", ".ods", ".odp":
+			return true
+		}
+	}
+	if ext == ".pyc" && strings.Contains(filepath.ToSlash(path), "/__pycache__/") {
+		return true
+	}
+	return false
+}
+
+func isVendoredDependencyPath(path string) bool {
+	lower := strings.ToLower(filepath.ToSlash(path))
+	for _, marker := range []string{"/vendor/", "/third_party/", "/site-packages/", "/dist-packages/", "/python_docx/", "/node_modules/"} {
+		if strings.Contains("/"+strings.TrimPrefix(lower, "/"), marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func executableMagic(data []byte) bool {
@@ -542,6 +684,10 @@ func findSkillFile(root string, rootIsFile bool) string {
 		}
 	}
 	return ""
+}
+
+func isSkillManifestName(name string) bool {
+	return name == "SKILL.md" || name == "skill.md"
 }
 
 func isManifestCandidate(root, path string, rootIsFile bool) bool {
@@ -697,7 +843,6 @@ func (s *Scanner) fingerprint(ctx context.Context, root string) (string, error) 
 	rootIsFile := !rootInfo.IsDir()
 	hash := sha256.New()
 	entriesSeen := 0
-	var totalSize int64
 	err = filepath.WalkDir(absRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -744,22 +889,11 @@ func (s *Scanner) fingerprint(ctx context.Context, root string) (string, error) 
 			return nil
 		}
 		if info.Mode().IsRegular() {
-			if info.Size() > s.config.MaxTotalSize-totalSize {
-				return fmt.Errorf("package size limit exceeded while fingerprinting (limit=%d bytes)", s.config.MaxTotalSize)
-			}
-			if info.Size() > s.config.MaxFileSize {
-				return fmt.Errorf("file %q exceeds fingerprint size limit (%d bytes)", rel, s.config.MaxFileSize)
-			}
 			file, err := os.Open(path)
 			if err != nil {
 				return err
 			}
-			remainingTotal := s.config.MaxTotalSize - totalSize
-			copyLimit := s.config.MaxFileSize
-			if remainingTotal < copyLimit {
-				copyLimit = remainingTotal
-			}
-			copied, copyErr := copyWithContext(ctx, hash, file, copyLimit)
+			_, copyErr := copyWithContext(ctx, hash, file, 1<<62)
 			closeErr := file.Close()
 			if copyErr != nil {
 				if errors.Is(copyErr, errByteLimitExceeded) {
@@ -770,7 +904,6 @@ func (s *Scanner) fingerprint(ctx context.Context, root string) (string, error) 
 			if closeErr != nil {
 				return closeErr
 			}
-			totalSize += copied
 			_, _ = io.WriteString(hash, "\x00")
 		}
 		return nil

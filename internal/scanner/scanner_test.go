@@ -53,6 +53,35 @@ Read the provided document and summarize its headings. Ask before writing files.
 	}
 }
 
+func TestSelectsSingleNestedSkillRoot(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "README.md", "repository documentation\n")
+	writeTestFile(t, root, "skill/SKILL.md", "---\nname: nested\ndescription: Nested skill\n---\n")
+	writeTestFile(t, root, "scripts/helper.py", "print('helper')\n")
+
+	selected, ok, err := New(DefaultConfig()).SelectSkillRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || selected != filepath.Join(root, "skill") {
+		t.Fatalf("selected root = %q, selected=%v; want %q, true", selected, ok, filepath.Join(root, "skill"))
+	}
+}
+
+func TestLeavesMultiSkillRepositoryAtRoot(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "skills/one/SKILL.md", "---\nname: one\ndescription: One\n---\n")
+	writeTestFile(t, root, "skills/two/SKILL.md", "---\nname: two\ndescription: Two\n---\n")
+
+	selected, ok, err := New(DefaultConfig()).SelectSkillRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok || selected != root {
+		t.Fatalf("selected root = %q, selected=%v; want repository root, false", selected, ok)
+	}
+}
+
 func TestRuleIDsAreUnique(t *testing.T) {
 	seen := map[string]string{}
 	for _, rule := range contentRules {
@@ -182,6 +211,48 @@ func TestScanDetectsBinaryAndOversizedFile(t *testing.T) {
 	}
 	assertHasRule(t, report, "SG-FILE-001")
 	assertHasRule(t, report, "SG-FILE-002")
+}
+
+func TestScanDoesNotTreatCommonPresentationArtifactsAsFindings(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "SKILL.md", "---\nname: presentation-assets\ndescription: Reviews a document.\n---\n")
+	writeTestBytes(t, root, "assets/cover.png", []byte("\x89PNG\r\n\x1a\n"))
+	writeTestBytes(t, root, ".DS_Store", []byte{0x00, 0x01, 0x02})
+	writeTestBytes(t, root, "literature/index.xlsx", []byte{'P', 'K', 0x03, 0x04})
+	writeTestBytes(t, root, "tests/__pycache__/test_tools.cpython-313.pyc", []byte{0x42, 0x0d, 0x0d, 0x0a, 0x00})
+
+	report, err := Scan(context.Background(), root, model.SourceInfo{Input: root, Kind: "local"}, "test")
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+	for _, finding := range report.Findings {
+		if finding.RuleID == "SG-FILE-002" {
+			t.Fatalf("common presentation/generated artifact was reported: %#v", finding)
+		}
+	}
+	if report.Verdict != model.VerdictPass {
+		t.Fatalf("verdict = %q, want pass; findings = %#v", report.Verdict, report.Findings)
+	}
+}
+
+func TestScanTreatsNestedSkillRepositoryAsInformational(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "skills/one/SKILL.md", "---\nname: one\ndescription: First child skill.\n---\n")
+	writeTestFile(t, root, "skills/two/SKILL.md", "---\nname: two\ndescription: Second child skill.\n---\n")
+
+	report, err := Scan(context.Background(), root, model.SourceInfo{Input: root, Kind: "local"}, "test")
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+	assertHasRule(t, report, "SG-MAN-004")
+	for _, finding := range report.Findings {
+		if finding.RuleID == "SG-MAN-003" {
+			t.Fatalf("nested Skill repository was treated as missing a Skill manifest: %#v", finding)
+		}
+	}
+	if report.Verdict != model.VerdictPass || report.RiskScore != 0 {
+		t.Fatalf("verdict=%q risk=%d; want pass/0; findings=%#v", report.Verdict, report.RiskScore, report.Findings)
+	}
 }
 
 func TestScanReportsTruncatedPackage(t *testing.T) {
@@ -314,11 +385,14 @@ func TestFingerprintHonorsBudgetsAndCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertHasRule(t, report, "SG-FILE-001")
-	if report.Fingerprint != "" {
-		t.Fatalf("incomplete scan produced a fingerprint: %s", report.Fingerprint)
+	if len(report.Fingerprint) != 64 {
+		t.Fatalf("oversized content did not produce a full-package fingerprint: %s", report.Fingerprint)
 	}
-	if _, err := scanner.fingerprint(context.Background(), root); err == nil || !strings.Contains(err.Error(), "size limit") {
-		t.Fatalf("fingerprint error = %v, want size limit", err)
+	if report.UninspectedFiles < 1 || report.FilesAnalyzed+report.UninspectedFiles != report.FilesScanned {
+		t.Fatalf("coverage = analyzed=%d uninspected=%d scanned=%d", report.FilesAnalyzed, report.UninspectedFiles, report.FilesScanned)
+	}
+	if _, err := scanner.fingerprint(context.Background(), root); err != nil {
+		t.Fatalf("fingerprint oversized content = %v, want success", err)
 	}
 	fileCountConfig := DefaultConfig()
 	fileCountConfig.MaxFiles = 1
@@ -328,8 +402,8 @@ func TestFingerprintHonorsBudgetsAndCancellation(t *testing.T) {
 	totalSizeConfig := DefaultConfig()
 	totalSizeConfig.MaxFileSize = 256
 	totalSizeConfig.MaxTotalSize = 128
-	if _, err := New(totalSizeConfig).fingerprint(context.Background(), root); err == nil || !strings.Contains(err.Error(), "package size limit") {
-		t.Fatalf("fingerprint error = %v, want package size limit", err)
+	if _, err := New(totalSizeConfig).fingerprint(context.Background(), root); err != nil {
+		t.Fatalf("fingerprint total-size independent = %v, want success", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -386,8 +460,8 @@ func TestScanCapsRepeatedFindingsAndFailsClosed(t *testing.T) {
 	if len(report.Findings) > maxRetainedFindings+1 {
 		t.Fatalf("findings = %d, exceeds bounded report", len(report.Findings))
 	}
-	if report.Verdict != model.VerdictBlock || report.Fingerprint != "" {
-		t.Fatalf("verdict/fingerprint = %s/%q, want block and no fingerprint", report.Verdict, report.Fingerprint)
+	if report.Verdict != model.VerdictBlock || len(report.Fingerprint) != 64 {
+		t.Fatalf("verdict/fingerprint = %s/%q, want block and a complete fingerprint", report.Verdict, report.Fingerprint)
 	}
 }
 
@@ -406,8 +480,8 @@ func TestScanCapsPackageWideFindings(t *testing.T) {
 	if len(report.Findings) != maxRetainedFindings+1 {
 		t.Fatalf("findings = %d, want %d retained plus one integrity finding", len(report.Findings), maxRetainedFindings+1)
 	}
-	if report.Verdict != model.VerdictBlock || report.Fingerprint != "" {
-		t.Fatalf("verdict/fingerprint = %s/%q, want block and no fingerprint", report.Verdict, report.Fingerprint)
+	if report.Verdict != model.VerdictBlock || len(report.Fingerprint) != 64 {
+		t.Fatalf("verdict/fingerprint = %s/%q, want block and a complete fingerprint", report.Verdict, report.Fingerprint)
 	}
 }
 

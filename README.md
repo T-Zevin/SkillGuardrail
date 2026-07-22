@@ -130,13 +130,41 @@ Scan a public GitHub repository. Remote content is resolved to an immutable comm
 skillguardrail scan https://github.com/example/useful-skill
 ```
 
-The initial release expects one portable Skill at the repository root and supports public GitHub HTTPS repositories only.
+If a repository has no root `SKILL.md` but contains exactly one nested Skill,
+SkillGuardrail automatically scans that Skill directory. Repositories with
+multiple nested Skills remain at the repository root so you can review the
+candidate list before selecting one.
+
+Interactive terminal scans show a staged progress bar while the source is
+resolved, quarantined, and analyzed. Progress is written to stderr and is
+automatically disabled for JSON/SARIF output, redirected logs, and other
+non-interactive writers.
+
+Large resources are still included in the package fingerprint even when they
+exceed the text-analysis budget. The report separates risk score from content
+coverage and lists files that received metadata/hash review only.
+
+Public GitHub HTTPS repositories are supported. A root Skill or a repository
+with exactly one nested Skill can be scanned directly; multiple nested Skills
+are reported for explicit selection.
 
 Request machine-readable output:
 
 ```bash
 skillguardrail scan ./my-skill --format json
 ```
+
+Human-readable reports are English by default. Add `-cn` to switch to
+Simplified Chinese. The table layout, risk bar, architecture tree, and
+translated rule explanations apply to text output; JSON and SARIF keep their
+stable machine-readable fields:
+
+```bash
+skillguardrail scan ./my-skill -cn
+```
+
+Terminal colors are enabled automatically when supported. Add `--no-color`
+only for plain-text logs or CI output.
 
 Produce SARIF for GitHub code scanning or another compatible consumer:
 

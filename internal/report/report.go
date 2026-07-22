@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"unicode"
@@ -20,6 +22,26 @@ const (
 	FormatSARIF Format = "sarif"
 )
 
+// Language controls human-readable text reports. Machine-readable JSON and
+// SARIF reports intentionally keep their stable English schema and fields.
+type Language string
+
+const (
+	LanguageEnglish Language = "en"
+	LanguageChinese Language = "zh-CN"
+)
+
+func ParseLanguage(value string) (Language, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "en", "en-us", "english":
+		return LanguageEnglish, nil
+	case "zh", "zh-cn", "zh-hans", "简体中文", "中文":
+		return LanguageChinese, nil
+	default:
+		return "", fmt.Errorf("unknown language %q (want en or zh-CN)", value)
+	}
+}
+
 func ParseFormat(value string) (Format, error) {
 	f := Format(strings.ToLower(strings.TrimSpace(value)))
 	switch f {
@@ -31,9 +53,15 @@ func ParseFormat(value string) (Format, error) {
 }
 
 func Write(w io.Writer, scan model.ScanReport, format Format, color bool) error {
+	return WriteLocalized(w, scan, format, color, LanguageEnglish)
+}
+
+// WriteLocalized writes a report using the requested human-readable language.
+// JSON and SARIF remain language-neutral so downstream automation is stable.
+func WriteLocalized(w io.Writer, scan model.ScanReport, format Format, color bool, language Language) error {
 	switch format {
 	case FormatText:
-		return writeText(w, scan, color)
+		return writeText(w, scan, color, language)
 	case FormatJSON:
 		return writeJSON(w, scan)
 	case FormatSARIF:
@@ -50,7 +78,10 @@ func writeJSON(w io.Writer, scan model.ScanReport) error {
 	return encoder.Encode(scan)
 }
 
-func writeText(w io.Writer, scan model.ScanReport, color bool) error {
+func writeText(w io.Writer, scan model.ScanReport, color bool, language Language) error {
+	if language != LanguageChinese {
+		language = LanguageEnglish
+	}
 	paint := func(code, value string) string {
 		if !color {
 			return value
@@ -64,6 +95,7 @@ func writeText(w io.Writer, scan model.ScanReport, color bool) error {
 	case model.VerdictBlock, model.VerdictCritical:
 		verdictColor = "31"
 	}
+	t := textFor(language)
 	if _, err := fmt.Fprintf(w, "SkillGuardrail %s\n\n", scan.ToolVersion); err != nil {
 		return err
 	}
@@ -71,28 +103,59 @@ func writeText(w io.Writer, scan model.ScanReport, color bool) error {
 	if fingerprint == "" {
 		fingerprint = "<unavailable: incomplete scan>"
 	}
-	if _, err := fmt.Fprintf(w, "VERDICT  %s\nRISK     %d/100\nSOURCE   %s\nFILES    %d (%d bytes)\nHASH     %s\n",
-		paint("1;"+verdictColor, strings.ToUpper(string(scan.Verdict))),
-		scan.RiskScore, SafeText(scan.Source.Input), scan.FilesScanned, scan.BytesScanned, fingerprint); err != nil {
+	// Keep a compact status line for shell users while the tables below make
+	// the report easier to scan visually.
+	verdictLabel := localizedVerdict(scan.Verdict, language)
+	statusEmoji := verdictEmoji(scan.Verdict)
+	if language == LanguageChinese {
+		if _, err := fmt.Fprintf(w, "🛡️ 判定  %s %s  |  风险 %d/100\n", paint("1;"+verdictColor, verdictLabel), statusEmoji, scan.RiskScore); err != nil {
+			return err
+		}
+	} else if _, err := fmt.Fprintf(w, "🛡️ VERDICT  %s %s  |  RISK %d/100\n",
+		paint("1;"+verdictColor, verdictLabel), statusEmoji, scan.RiskScore); err != nil {
 		return err
 	}
-	if scan.Metadata.Name != "" {
-		if _, err := fmt.Fprintf(w, "SKILL    %s\n", SafeText(scan.Metadata.Name)); err != nil {
-			return err
+	coverage := fmt.Sprintf("%d/%d", scan.FilesAnalyzed, scan.FilesScanned)
+	if scan.UninspectedFiles > 0 {
+		if language == LanguageChinese {
+			coverage += fmt.Sprintf("（%d 个文件未进行内容分析）", scan.UninspectedFiles)
+		} else {
+			coverage += fmt.Sprintf(" (%d uninspected)", scan.UninspectedFiles)
 		}
 	}
+	rows := [][]string{
+		{t.summaryVerdict, verdictLabel},
+		{t.summaryRisk, fmt.Sprintf("%d/100", scan.RiskScore)},
+		{t.summaryScore, scoreBar(scan.RiskScore)},
+		{t.summaryHighest, localizedSeverity(scan.Highest, language)},
+		{t.summarySource, truncate(SafeText(scan.Source.Input), 96)},
+		{t.summaryFiles, fmt.Sprintf("%d (%s)", scan.FilesScanned, formatBytes(scan.BytesScanned))},
+		{t.summaryCoverage, coverage},
+		{t.summaryFingerprint, fingerprint},
+	}
+	if scan.Metadata.Name != "" {
+		rows = append(rows, []string{t.summarySkill, SafeText(scan.Metadata.Name)})
+	}
+	if err := writeTable(w, t.summaryTitle, []string{t.field, t.value}, rows); err != nil {
+		return err
+	}
+	if err := writeTable(w, t.verdictLevelsTitle, []string{t.level, t.meaning}, verdictRows(language)); err != nil {
+		return err
+	}
+	if err := writeArchitecture(w, scan.Root, t.architectureTitle, scan.Source.Input); err != nil {
+		return err
+	}
 	if len(scan.Capabilities) > 0 {
-		if _, err := fmt.Fprintln(w, "\nCAPABILITIES"); err != nil {
-			return err
-		}
+		capRows := make([][]string, 0, len(scan.Capabilities))
 		for _, capability := range scan.Capabilities {
-			if _, err := fmt.Fprintf(w, "  %-10s %s\n", strings.ToUpper(string(capability.Risk)), SafeText(capability.Name)); err != nil {
-				return err
-			}
+			capRows = append(capRows, []string{localizedSeverity(capability.Risk, language), SafeText(capability.Name)})
+		}
+		if err := writeTable(w, t.capabilitiesTitle, []string{t.severity, t.capability}, capRows); err != nil {
+			return err
 		}
 	}
 	if len(scan.Findings) == 0 {
-		_, err := fmt.Fprintln(w, "\nNo findings. Static analysis cannot prove a skill is safe; review its requested capabilities before installation.")
+		_, err := fmt.Fprintf(w, "\n%s\n", t.noFindings)
 		return err
 	}
 
@@ -106,14 +169,29 @@ func writeText(w io.Writer, scan model.ScanReport, color bool) error {
 		}
 		return findings[i].Severity.Rank() > findings[j].Severity.Rank()
 	})
-	if _, err := fmt.Fprintf(w, "\nFINDINGS (%d)\n", len(findings)); err != nil {
-		return err
-	}
+	findingRows := make([][]string, 0, len(findings))
 	for _, finding := range findings {
 		location := SafeText(finding.Location.Path)
 		if finding.Location.Line > 0 {
 			location += fmt.Sprintf(":%d", finding.Location.Line)
 		}
+		localized := localizeFinding(finding, language)
+		findingRows = append(findingRows, []string{
+			localizedSeverity(finding.Severity, language), SafeText(finding.RuleID), truncate(location, 64), truncate(localized.Title, 72),
+		})
+	}
+	if err := writeTable(w, fmt.Sprintf("%s (%d)", t.findingsTitle, len(findings)), []string{t.severity, t.rule, t.location, t.title}, findingRows); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "\n%s\n", t.detailsTitle); err != nil {
+		return err
+	}
+	for index, finding := range findings {
+		location := SafeText(finding.Location.Path)
+		if finding.Location.Line > 0 {
+			location += fmt.Sprintf(":%d", finding.Location.Line)
+		}
+		localized := localizeFinding(finding, language)
 		severityColor := "36"
 		switch finding.Severity {
 		case model.SeverityMedium:
@@ -121,28 +199,295 @@ func writeText(w io.Writer, scan model.ScanReport, color bool) error {
 		case model.SeverityHigh, model.SeverityCritical:
 			severityColor = "31"
 		}
-		if _, err := fmt.Fprintf(w, "\n%s %s  %s\n  %s\n",
-			paint("1;"+severityColor, "["+strings.ToUpper(string(finding.Severity))+"]"),
-			SafeText(finding.RuleID), SafeText(finding.Title), location); err != nil {
+		if _, err := fmt.Fprintf(w, "\n%d. %s %s  %s\n  %s\n",
+			index+1,
+			paint("1;"+severityColor, "["+localizedSeverity(finding.Severity, language)+"]"),
+			SafeText(finding.RuleID), SafeText(localized.Title), location); err != nil {
 			return err
 		}
-		if finding.Description != "" {
-			if _, err := fmt.Fprintf(w, "  %s\n", SafeText(finding.Description)); err != nil {
+		if localized.Description != "" {
+			if _, err := fmt.Fprintf(w, "  %s\n", SafeText(localized.Description)); err != nil {
 				return err
 			}
 		}
 		if finding.Evidence != "" {
-			if _, err := fmt.Fprintf(w, "  Evidence: %s\n", SafeText(finding.Evidence)); err != nil {
+			if _, err := fmt.Fprintf(w, "  %s: %s\n", t.evidence, SafeText(finding.Evidence)); err != nil {
 				return err
 			}
 		}
-		if finding.Recommendation != "" {
-			if _, err := fmt.Fprintf(w, "  Fix: %s\n", SafeText(finding.Recommendation)); err != nil {
+		if localized.Recommendation != "" {
+			if _, err := fmt.Fprintf(w, "  %s: %s\n", t.fix, SafeText(localized.Recommendation)); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+type reportText struct {
+	summaryTitle, field, value, summaryVerdict, summaryRisk, summaryScore, summaryHighest, summarySource, summaryFiles, summaryCoverage, summaryFingerprint, summarySkill         string
+	verdictLevelsTitle, level, meaning, architectureTitle, capabilitiesTitle, severity, capability, findingsTitle, rule, location, title, detailsTitle, evidence, fix, noFindings string
+}
+
+func textFor(language Language) reportText {
+	if language == LanguageChinese {
+		return reportText{
+			summaryTitle: "📊 扫描摘要", field: "字段", value: "值", summaryVerdict: "判定", summaryRisk: "风险", summaryScore: "评分", summaryHighest: "最高级别", summarySource: "来源", summaryFiles: "文件", summaryCoverage: "内容覆盖", summaryFingerprint: "指纹", summarySkill: "Skill",
+			verdictLevelsTitle: "🧭 判定等级", level: "等级", meaning: "含义",
+			architectureTitle: "🌳 项目结构",
+			capabilitiesTitle: "🧩 能力清单", severity: "级别", capability: "能力", findingsTitle: "🔎 发现", rule: "规则", location: "位置", title: "标题", detailsTitle: "发现详情", evidence: "证据", fix: "建议",
+			noFindings: "未发现问题。静态分析不能证明 Skill 绝对安全，请仍然复核它申请的能力。",
+		}
+	}
+	return reportText{
+		summaryTitle: "📊 SUMMARY", field: "FIELD", value: "VALUE", summaryVerdict: "VERDICT", summaryRisk: "RISK", summaryScore: "SCORE", summaryHighest: "HIGHEST", summarySource: "SOURCE", summaryFiles: "FILES", summaryCoverage: "CONTENT COVERAGE", summaryFingerprint: "FINGERPRINT", summarySkill: "SKILL",
+		verdictLevelsTitle: "🧭 VERDICT LEVELS", level: "LEVEL", meaning: "MEANING",
+		architectureTitle: "🌳 PROJECT ARCHITECTURE",
+		capabilitiesTitle: "🧩 CAPABILITIES", severity: "SEVERITY", capability: "CAPABILITY", findingsTitle: "🔎 FINDINGS", rule: "RULE", location: "LOCATION", title: "TITLE", detailsTitle: "DETAILS", evidence: "Evidence", fix: "Fix",
+		noFindings: "No findings. Static analysis cannot prove a skill is safe; review its requested capabilities before installation.",
+	}
+}
+
+func verdictRows(language Language) [][]string {
+	if language == LanguageChinese {
+		return [][]string{
+			{"通过", "未发现阻断信号；仍应复核 Skill 的能力和来源。"},
+			{"需复核", "存在中风险信号，需要人工确认后再决定。"},
+			{"阻断", "存在高风险信号或风险阈值已达到，默认拒绝安装。"},
+			{"严重", "发现严重行为链或完整性问题，始终拒绝安装。"},
+		}
+	}
+	return [][]string{
+		{"PASS", "No blocking signal detected; review capabilities and provenance."},
+		{"REVIEW", "Medium-risk signal requires a human decision."},
+		{"BLOCK", "High-risk signal or threshold reached; installation is refused by default."},
+		{"CRITICAL", "Critical behavior chain or integrity failure; installation is always refused."},
+	}
+}
+
+func writeArchitecture(w io.Writer, root, title, input string) error {
+	lines := architectureTree(root, 80, 4, architectureDisplayName(input, root))
+	if len(lines) <= 1 {
+		return nil
+	}
+	if _, err := fmt.Fprintf(w, "\n%s\n", title); err != nil {
+		return err
+	}
+	for _, line := range lines {
+		if _, err := fmt.Fprintf(w, "%s\n", line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func architectureTree(root string, maxEntries, maxDepth int, displayName string) []string {
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() || maxEntries < 1 {
+		return nil
+	}
+	name := displayName
+	if name == "" {
+		name = filepath.Base(filepath.Clean(root))
+	}
+	if name == "." || name == string(filepath.Separator) || name == "" {
+		name = "project"
+	}
+	lines := []string{SafeText(name) + "/"}
+	omitted := 0
+	var walk func(string, string, int)
+	walk = func(dir, prefix string, depth int) {
+		entries, readErr := os.ReadDir(dir)
+		if readErr != nil {
+			return
+		}
+		for index, entry := range entries {
+			if entry.Name() == ".git" {
+				continue
+			}
+			if len(lines) >= maxEntries {
+				omitted++
+				continue
+			}
+			last := index == len(entries)-1
+			branch := "├── "
+			nextPrefix := prefix + "│   "
+			if last {
+				branch = "└── "
+				nextPrefix = prefix + "    "
+			}
+			name := SafeText(entry.Name())
+			isDir := entry.IsDir()
+			if isDir {
+				name += "/"
+			}
+			lines = append(lines, prefix+branch+name)
+			if isDir && depth < maxDepth {
+				walk(filepath.Join(dir, entry.Name()), nextPrefix, depth+1)
+			}
+		}
+	}
+	walk(root, "", 1)
+	if omitted > 0 {
+		lines = append(lines, fmt.Sprintf("└── … (%d more entries)", omitted))
+	}
+	return lines
+}
+
+func architectureDisplayName(input, root string) string {
+	name := strings.TrimSuffix(strings.TrimSuffix(filepath.Base(strings.TrimSuffix(input, "/")), ".git"), "\\")
+	if strings.EqualFold(name, "SKILL.md") || name == "." || name == "/" || name == "" {
+		name = filepath.Base(filepath.Clean(root))
+	}
+	return SafeText(name)
+}
+
+func formatBytes(value int64) string {
+	if value < 1024 {
+		return fmt.Sprintf("%d B", value)
+	}
+	if value < 1024*1024 {
+		return fmt.Sprintf("%.1f KiB", float64(value)/1024)
+	}
+	return fmt.Sprintf("%.1f MiB", float64(value)/(1024*1024))
+}
+
+func localizedVerdict(verdict model.Verdict, language Language) string {
+	if language == LanguageChinese {
+		switch verdict {
+		case model.VerdictPass:
+			return "通过"
+		case model.VerdictReview:
+			return "需复核"
+		case model.VerdictBlock:
+			return "阻断"
+		case model.VerdictCritical:
+			return "严重"
+		}
+	}
+	return strings.ToUpper(string(verdict))
+}
+
+func localizedSeverity(severity model.Severity, language Language) string {
+	if language == LanguageChinese {
+		switch severity {
+		case model.SeverityInfo:
+			return "信息"
+		case model.SeverityLow:
+			return "低"
+		case model.SeverityMedium:
+			return "中"
+		case model.SeverityHigh:
+			return "高"
+		case model.SeverityCritical:
+			return "严重"
+		}
+	}
+	return strings.ToUpper(string(severity))
+}
+
+func scoreBar(score int) string {
+	if score < 0 {
+		score = 0
+	}
+	if score > 100 {
+		score = 100
+	}
+	const width = 20
+	filled := (score*width + 99) / 100
+	if score == 0 {
+		filled = 0
+	}
+	return fmt.Sprintf("%s%s %d/100", strings.Repeat("█", filled), strings.Repeat("░", width-filled), score)
+}
+
+func verdictEmoji(verdict model.Verdict) string {
+	switch verdict {
+	case model.VerdictPass:
+		return "✅"
+	case model.VerdictReview:
+		return "⚠️"
+	case model.VerdictBlock:
+		return "⛔"
+	case model.VerdictCritical:
+		return "🚨"
+	default:
+		return "🔎"
+	}
+}
+
+func truncate(value string, max int) string {
+	runes := []rune(value)
+	if len(runes) <= max {
+		return value
+	}
+	return string(runes[:max-1]) + "…"
+}
+
+func writeTable(w io.Writer, title string, headers []string, rows [][]string) error {
+	if _, err := fmt.Fprintf(w, "\n%s\n", title); err != nil {
+		return err
+	}
+	widths := make([]int, len(headers))
+	for i, header := range headers {
+		widths[i] = textWidth(header)
+	}
+	for _, row := range rows {
+		for i, cell := range row {
+			if i < len(widths) && textWidth(cell) > widths[i] {
+				widths[i] = textWidth(cell)
+			}
+		}
+	}
+	border := func() string {
+		parts := make([]string, len(widths))
+		for i, width := range widths {
+			parts[i] = strings.Repeat("-", width+2)
+		}
+		return "+" + strings.Join(parts, "+") + "+\n"
+	}
+	row := func(values []string) string {
+		cells := make([]string, len(widths))
+		for i, width := range widths {
+			value := ""
+			if i < len(values) {
+				value = values[i]
+			}
+			cells[i] = " " + value + strings.Repeat(" ", width-textWidth(value)+1)
+		}
+		return "|" + strings.Join(cells, "|") + "|\n"
+	}
+	if _, err := io.WriteString(w, border()); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, row(headers)); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, border()); err != nil {
+		return err
+	}
+	for _, values := range rows {
+		if _, err := io.WriteString(w, row(values)); err != nil {
+			return err
+		}
+	}
+	_, err := io.WriteString(w, border())
+	return err
+}
+
+// textWidth is a small terminal-width approximation for table alignment. It
+// treats common East Asian wide characters as two columns without adding a
+// dependency just for presentation formatting.
+func textWidth(value string) int {
+	width := 0
+	for _, r := range value {
+		if unicode.In(r, unicode.Han, unicode.Hangul, unicode.Hiragana, unicode.Katakana) {
+			width += 2
+		} else {
+			width++
+		}
+	}
+	return width
 }
 
 type sarifLog struct {

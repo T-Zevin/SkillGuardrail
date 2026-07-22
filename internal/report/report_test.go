@@ -15,9 +15,9 @@ func sampleReport() model.ScanReport {
 	r.BytesScanned = 42
 	r.Fingerprint = "abc123"
 	r.Findings = append(r.Findings, model.Finding{
-		RuleID: "SG100", Title: "Dangerous command", Description: "Runs a destructive command.",
+		RuleID: "SG-EXEC-002", Title: "Destructive filesystem command", Description: "The command can recursively or forcefully destroy files or storage.",
 		Severity: model.SeverityHigh, Category: "command-execution",
-		Location: model.Location{Path: "SKILL.md", Line: 7}, Evidence: "rm -rf", Recommendation: "Remove it.",
+		Location: model.Location{Path: "SKILL.md", Line: 7}, Evidence: "rm -rf", Recommendation: "Remove destructive commands.",
 	})
 	r.Finalize()
 	return r
@@ -28,10 +28,33 @@ func TestTextReport(t *testing.T) {
 	if err := Write(&out, sampleReport(), FormatText, false); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"VERDICT  BLOCK", "SG100", "SKILL.md:7"} {
+	for _, want := range []string{"VERDICT  BLOCK", "SG-EXEC-002", "SKILL.md:7", "SUMMARY", "FINDINGS"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("report missing %q:\n%s", want, out.String())
 		}
+	}
+}
+
+func TestChineseTextReport(t *testing.T) {
+	var out bytes.Buffer
+	if err := WriteLocalized(&out, sampleReport(), FormatText, false, LanguageChinese); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"判定  阻断", "扫描摘要", "判定", "发现", "高", "破坏性文件系统命令", "命令可能递归或强制删除文件或存储。", "建议"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("Chinese report missing %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestParseLanguage(t *testing.T) {
+	for _, value := range []string{"en", "zh", "zh-CN", "中文"} {
+		if _, err := ParseLanguage(value); err != nil {
+			t.Fatalf("ParseLanguage(%q): %v", value, err)
+		}
+	}
+	if _, err := ParseLanguage("fr"); err == nil {
+		t.Fatal("ParseLanguage accepted unsupported language")
 	}
 }
 
