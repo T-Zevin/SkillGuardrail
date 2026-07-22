@@ -3,6 +3,7 @@ package install
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -300,7 +301,7 @@ func TestInstallRejectsAccumulatedBlockVerdict(t *testing.T) {
 	}
 	for index := 0; index < 7; index++ {
 		report.Findings = append(report.Findings, model.Finding{
-			RuleID: "SG-TEST-MEDIUM", Title: "Synthetic review item", Severity: model.SeverityMedium,
+			RuleID: fmt.Sprintf("SG-TEST-MEDIUM-%d", index), Title: "Synthetic review item", Severity: model.SeverityMedium,
 			Category: "test", Location: model.Location{Path: "SKILL.md", Line: index + 1},
 		})
 	}

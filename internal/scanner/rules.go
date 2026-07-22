@@ -259,9 +259,17 @@ var contentRules = []rule{
 		recommendation: "Replace encoded payloads with auditable source code.",
 		patterns: regexps(
 			`(?i)\[convert\]::frombase64string\s*\(`,
-			`(?i)\b(?:atob|fromcharcode|b64decode|decodebytes)\s*\(`,
+			`(?i)\b(?:exec|eval|compile|function|child_process|subprocess)\s*\([^\n]{0,160}\b(?:atob|b64decode|decodebytes)\s*\(`,
+			`(?i)\b(?:atob|b64decode|decodebytes)\s*\([^\n]{0,240}\)[^\n]{0,120}\b(?:exec|eval|compile|function|child_process|subprocess)\b`,
+			`(?i)\bfromcharcode\s*\(\s*(?:\d+\s*,\s*){7,}\d+\s*\)`,
 			`(?i)\\x[0-9a-f]{2}(?:\\x[0-9a-f]{2}){7,}`,
 		),
+	},
+	{
+		id: "SG-OBF-005", title: "Base64 decoding", category: "obfuscation", severity: model.SeverityLow, confidence: "low",
+		description:    "The source decodes Base64 content; the result may be ordinary data or an encoded payload.",
+		recommendation: "Confirm that the decoded value is expected data and is never passed to a dynamic executor.",
+		patterns:       regexps(`(?i)\b(?:atob|b64decode|decodebytes)\s*\(`),
 	},
 	{
 		id: "SG-OBF-003", title: "Long encoded blob", category: "obfuscation", severity: model.SeverityMedium, confidence: "medium",
@@ -305,8 +313,7 @@ var contentRules = []rule{
 func suspiciousUnicode(line string) (string, bool) {
 	for _, r := range line {
 		switch r {
-		case '\u200b', '\u200c', '\u200d', '\u2060', '\ufeff',
-			'\u202a', '\u202b', '\u202c', '\u202d', '\u202e',
+		case '\u202a', '\u202b', '\u202c', '\u202d', '\u202e',
 			'\u2066', '\u2067', '\u2068', '\u2069':
 			return string(r), true
 		}

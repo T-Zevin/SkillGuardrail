@@ -30,6 +30,7 @@ const (
 
 type progressLabels struct {
 	resolve       string
+	download      string
 	scan          string
 	report        string
 	policy        string
@@ -49,7 +50,7 @@ type progressLabels struct {
 func labelsFor(language report.Language) progressLabels {
 	if language == report.LanguageChinese {
 		return progressLabels{
-			resolve: "获取并隔离来源", scan: "扫描隔离包", report: "整理报告与完整性指纹",
+			resolve: "获取并隔离来源", download: "下载 GitHub 归档", scan: "扫描隔离包", report: "整理报告与完整性指纹",
 			policy: "检查安装策略", install: "原子安装并写入收据", installed: "安装完成", discover: "发现唯一 Skill 子目录", completed: "扫描完成",
 			sourceFailed: "获取来源失败", scanFailed: "扫描失败", reportFailed: "报告生成失败",
 			incomplete: "扫描不完整", blocked: "扫描完成，安装被阻断", waiting: "扫描完成，等待确认",
@@ -57,11 +58,32 @@ func labelsFor(language report.Language) progressLabels {
 		}
 	}
 	return progressLabels{
-		resolve: "Resolving and quarantining source", scan: "Scanning quarantined package", report: "Preparing report and fingerprint",
+		resolve: "Resolving and quarantining source", download: "Downloading GitHub archive", scan: "Scanning quarantined package", report: "Preparing report and fingerprint",
 		policy: "Checking install policy", install: "Installing atomically and writing receipt", installed: "Installation complete", discover: "Found the only nested Skill", completed: "Scan complete",
 		sourceFailed: "Source resolution failed", scanFailed: "Scan failed", reportFailed: "Report generation failed",
 		incomplete: "Scan incomplete", blocked: "Scan complete; installation blocked", waiting: "Scan complete; awaiting confirmation",
 		installFailed: "Installation failed",
+	}
+}
+
+func archiveProgress(indicator *progress.Indicator, labels progressLabels) source.DownloadProgressFunc {
+	return func(update source.DownloadProgress) {
+		label := labels.download
+		percent := 5
+		if update.Total > 0 {
+			ratio := float64(update.Downloaded) / float64(update.Total)
+			if ratio < 0 {
+				ratio = 0
+			}
+			if ratio > 1 {
+				ratio = 1
+			}
+			percent += int(ratio * 30)
+			label = fmt.Sprintf("%s %.1f/%.1f MiB (%d/%d)", labels.download, float64(update.Downloaded)/(1<<20), float64(update.Total)/(1<<20), update.Attempt, update.Attempts)
+		} else if update.Attempt > 0 {
+			label = fmt.Sprintf("%s (%d/%d)", labels.download, update.Attempt, update.Attempts)
+		}
+		indicator.Set(percent, label)
 	}
 }
 
@@ -97,11 +119,11 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	chinese := flags.Bool("cn", false, "render the human-readable report in Simplified Chinese")
 	output := flags.String("output", "", "write the report to a file")
 	failOnValue := flags.String("fail-on", "medium", "return exit 1 at this severity or higher")
-	timeout := flags.Duration("timeout", 10*time.Minute, "maximum fetch and scan duration")
+	timeout := flags.Duration("timeout", 20*time.Minute, "maximum fetch and scan duration")
 	noColor := flags.Bool("no-color", false, "disable ANSI color")
-	maxFiles := flags.Int("max-files", 5000, "maximum number of package entries")
-	maxFileSize := flags.Int64("max-file-size", 2<<20, "maximum bytes scanned per file")
-	maxTotalSize := flags.Int64("max-total-size", 20<<20, "maximum total bytes scanned")
+	maxFiles := flags.Int("max-files", 10000, "maximum number of package entries")
+	maxFileSize := flags.Int64("max-file-size", 8<<20, "maximum bytes scanned per file")
+	maxTotalSize := flags.Int64("max-total-size", 64<<20, "maximum total bytes scanned")
 	sourceDefaults := source.DefaultLimits()
 	maxArchiveSize := flags.Int64("max-archive-size", sourceDefaults.MaxArchiveBytes, "maximum compressed GitHub archive bytes")
 	maxExtractSize := flags.Int64("max-extract-size", sourceDefaults.MaxExtractBytes, "maximum extracted source bytes")
@@ -143,10 +165,10 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	showProgress := format == report.FormatText && *output == "" && progress.EnabledForTerminal(stderr)
 	indicator := progress.New(stderr, showProgress)
 	indicator.Start(5, labels.resolve)
-	resolved, err := source.ResolveWithLimits(ctx, flags.Arg(0), source.Limits{
+	resolved, err := source.ResolveWithLimitsAndProgress(ctx, flags.Arg(0), source.Limits{
 		MaxArchiveBytes: *maxArchiveSize, MaxExtractBytes: *maxExtractSize,
 		MaxUncompressedBytes: *maxUncompressedSize, MaxExtractFiles: *maxSourceEntries,
-	})
+	}, archiveProgress(indicator, labels))
 	if err != nil {
 		indicator.Fail(labels.sourceFailed)
 		fmt.Fprintln(stderr, "skillguardrail: source:", report.SafeText(sourceErrorMessage(err, *timeout)))
@@ -259,10 +281,10 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	showProgress := progress.EnabledForTerminal(stderr)
 	indicator := progress.New(stderr, showProgress)
 	indicator.Start(5, labels.resolve)
-	resolved, err := source.ResolveWithLimits(ctx, flags.Arg(0), source.Limits{
+	resolved, err := source.ResolveWithLimitsAndProgress(ctx, flags.Arg(0), source.Limits{
 		MaxArchiveBytes: *maxArchiveSize, MaxExtractBytes: *maxExtractSize,
 		MaxUncompressedBytes: *maxUncompressedSize, MaxExtractFiles: *maxSourceEntries,
-	})
+	}, archiveProgress(indicator, labels))
 	if err != nil {
 		indicator.Fail(labels.sourceFailed)
 		fmt.Fprintln(stderr, "skillguardrail: source:", report.SafeText(sourceErrorMessage(err, *timeout)))
@@ -439,6 +461,9 @@ func interspersed(args []string, boolFlags map[string]bool) []string {
 func sourceErrorMessage(err error, timeout time.Duration) string {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Sprintf("%s; increase --timeout (current limit %s)", err, timeout)
+	}
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return fmt.Sprintf("%s; GitHub archive transfer was interrupted after automatic retries—retry later, increase --timeout (current limit %s), or scan a local clone", err, timeout)
 	}
 	return err.Error()
 }

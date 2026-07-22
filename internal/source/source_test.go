@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -234,6 +235,55 @@ func TestStoreArchiveHashesCompleteBody(t *testing.T) {
 	}
 }
 
+func TestDownloadGitHubArchiveRetriesTruncatedBody(t *testing.T) {
+	payload := gzipTar(t, "repo-sha", []byte("safe\n"))
+	attempts := 0
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		attempts++
+		body := io.NopCloser(bytes.NewReader(payload))
+		if attempts == 1 {
+			body = io.NopCloser(io.MultiReader(bytes.NewReader(payload[:len(payload)/2]), errReader{err: io.ErrUnexpectedEOF}))
+		}
+		return &http.Response{
+			StatusCode:    http.StatusOK,
+			Status:        "200 OK",
+			ContentLength: int64(len(payload)),
+			Header:        make(http.Header),
+			Body:          body,
+		}, nil
+	})}
+	archive, err := os.CreateTemp(t.TempDir(), "archive-*.tar.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+
+	written, gotHash, err := downloadGitHubArchive(context.Background(), client, "https://example.invalid/archive", archive, DefaultLimits(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Fatalf("download attempts = %d, want 2", attempts)
+	}
+	if written != int64(len(payload)) {
+		t.Fatalf("written = %d, want %d", written, len(payload))
+	}
+	wantHash := sha256.Sum256(payload)
+	if gotHash != hex.EncodeToString(wantHash[:]) {
+		t.Fatalf("archive hash = %q, want %q", gotHash, hex.EncodeToString(wantHash[:]))
+	}
+	if _, err := archive.Seek(0, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := io.ReadAll(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(stored, payload) {
+		t.Fatal("retry did not replace the truncated archive with the complete body")
+	}
+}
+
 func TestSourceLimitsHaveBoundedDefaultsAndOverrides(t *testing.T) {
 	defaults, err := (Limits{}).normalize()
 	if err != nil {
@@ -328,6 +378,16 @@ func gzipBytes(t *testing.T, data []byte) []byte {
 	}
 	return compressed.Bytes()
 }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return fn(request)
+}
+
+type errReader struct{ err error }
+
+func (r errReader) Read([]byte) (int, error) { return 0, r.err }
 
 func TestParseGitHubURLRejectsUnsafeForms(t *testing.T) {
 	for _, value := range []string{

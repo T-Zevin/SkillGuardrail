@@ -87,6 +87,18 @@ type Limits struct {
 	MaxExtractFiles      int
 }
 
+// DownloadProgress reports immutable archive acquisition without exposing its
+// contents. It lets interactive callers show progress while the scanner keeps
+// the source quarantined.
+type DownloadProgress struct {
+	Downloaded int64
+	Total      int64
+	Attempt    int
+	Attempts   int
+}
+
+type DownloadProgressFunc func(DownloadProgress)
+
 func DefaultLimits() Limits {
 	return Limits{
 		MaxArchiveBytes:      defaultMaxArchiveBytes,
@@ -140,6 +152,12 @@ func Resolve(ctx context.Context, input string) (*Resolved, error) {
 }
 
 func ResolveWithLimits(ctx context.Context, input string, limits Limits) (*Resolved, error) {
+	return ResolveWithLimitsAndProgress(ctx, input, limits, nil)
+}
+
+// ResolveWithLimitsAndProgress resolves a source into quarantine and reports
+// archive acquisition progress when the source is a public GitHub repository.
+func ResolveWithLimitsAndProgress(ctx context.Context, input string, limits Limits, progress DownloadProgressFunc) (*Resolved, error) {
 	normalized, err := limits.normalize()
 	if err != nil {
 		return nil, err
@@ -149,7 +167,7 @@ func ResolveWithLimits(ctx context.Context, input string, limits Limits) (*Resol
 		return nil, errors.New("source is required")
 	}
 	if strings.Contains(input, "://") {
-		return resolveGitHub(ctx, input, normalized)
+		return resolveGitHub(ctx, input, normalized, progress)
 	}
 	return resolveLocal(ctx, input, normalized)
 }
@@ -332,7 +350,7 @@ func ParseGitHubURL(raw string) (string, string, string, error) {
 	return owner, repo, canonical, nil
 }
 
-func resolveGitHub(ctx context.Context, raw string, limits Limits) (*Resolved, error) {
+func resolveGitHub(ctx context.Context, raw string, limits Limits, progress DownloadProgressFunc) (*Resolved, error) {
 	owner, repo, canonical, err := ParseGitHubURL(raw)
 	if err != nil {
 		return nil, err
@@ -362,26 +380,6 @@ func resolveGitHub(ctx context.Context, raw string, limits Limits) (*Resolved, e
 		return nil, fmt.Errorf("secure quarantine root: %w", err)
 	}
 
-	archiveURL := "https://codeload.github.com/" + owner + "/" + repo + "/tar.gz/" + sha
-	resp, err := doGitHubGet(ctx, client, archiveURL, func(req *http.Request) {
-		req.Header.Set("Accept", "application/octet-stream")
-		req.Header.Set("Accept-Encoding", "identity")
-		req.Header.Set("User-Agent", "SkillGuardrail")
-	})
-	if err != nil {
-		_ = cleanup()
-		return nil, fmt.Errorf("download immutable GitHub archive: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		_ = cleanup()
-		return nil, fmt.Errorf("download immutable GitHub archive: HTTP %s", resp.Status)
-	}
-	if resp.ContentLength > limits.MaxArchiveBytes {
-		_ = cleanup()
-		return nil, fmt.Errorf("GitHub archive is larger than %s", formatLimit(limits.MaxArchiveBytes))
-	}
-
 	archiveFile, err := os.CreateTemp(quarantine, "archive-*.tar.gz")
 	if err != nil {
 		_ = cleanup()
@@ -393,7 +391,8 @@ func resolveGitHub(ctx context.Context, raw string, limits Limits) (*Resolved, e
 		_ = cleanup()
 		return nil, fmt.Errorf("secure archive quarantine file: %w", err)
 	}
-	archiveBytes, archiveHash, err := storeArchive(resp.Body, archiveFile, limits.MaxArchiveBytes)
+	archiveURL := "https://codeload.github.com/" + owner + "/" + repo + "/tar.gz/" + sha
+	archiveBytes, archiveHash, err := downloadGitHubArchive(ctx, client, archiveURL, archiveFile, limits, progress)
 	closeErr := archiveFile.Close()
 	if err != nil {
 		_ = cleanup()
@@ -493,8 +492,15 @@ func isAllowedGitHubHost(host string) bool {
 }
 
 func doGitHubGet(ctx context.Context, client *http.Client, endpoint string, configure func(*http.Request)) (*http.Response, error) {
+	return doGitHubGetAttempts(ctx, client, endpoint, configure, maxGitHubAttempts)
+}
+
+func doGitHubGetAttempts(ctx context.Context, client *http.Client, endpoint string, configure func(*http.Request), attempts int) (*http.Response, error) {
+	if attempts <= 0 {
+		attempts = 1
+	}
 	var lastErr error
-	for attempt := 0; attempt < maxGitHubAttempts; attempt++ {
+	for attempt := 0; attempt < attempts; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
 			return nil, err
@@ -515,7 +521,7 @@ func doGitHubGet(ctx context.Context, client *http.Client, endpoint string, conf
 				return nil, err
 			}
 		}
-		if attempt+1 == maxGitHubAttempts {
+		if attempt+1 == attempts {
 			break
 		}
 		delay := time.Duration(1<<attempt) * 500 * time.Millisecond
@@ -530,6 +536,80 @@ func doGitHubGet(ctx context.Context, client *http.Client, endpoint string, conf
 		}
 	}
 	return nil, lastErr
+}
+
+func downloadGitHubArchive(ctx context.Context, client *http.Client, endpoint string, destination *os.File, limits Limits, progress DownloadProgressFunc) (int64, string, error) {
+	var lastErr error
+	for attempt := 0; attempt < maxGitHubAttempts; attempt++ {
+		if attempt > 0 {
+			delay := time.Duration(1<<min(attempt, 2)) * 500 * time.Millisecond
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
+				return 0, "", ctx.Err()
+			case <-timer.C:
+			}
+		}
+		if err := destination.Truncate(0); err != nil {
+			return 0, "", fmt.Errorf("reset archive quarantine file: %w", err)
+		}
+		if _, err := destination.Seek(0, io.SeekStart); err != nil {
+			return 0, "", fmt.Errorf("rewind archive quarantine file: %w", err)
+		}
+
+		// Archive downloads can be legitimately slow on constrained networks.
+		// The caller's overall timeout is the hard bound; do not impose a short
+		// per-attempt deadline that turns a progressing transfer into a failure.
+		resp, err := doGitHubGetAttempts(ctx, client, endpoint, func(req *http.Request) {
+			req.Header.Set("Accept", "application/octet-stream")
+			req.Header.Set("Accept-Encoding", "identity")
+			req.Header.Set("User-Agent", "SkillGuardrail")
+		}, 1)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("HTTP %s", resp.Status)
+			_ = resp.Body.Close()
+			continue
+		}
+		if resp.ContentLength > limits.MaxArchiveBytes {
+			lastErr = fmt.Errorf("GitHub archive is larger than %s", formatLimit(limits.MaxArchiveBytes))
+			_ = resp.Body.Close()
+			return 0, "", lastErr
+		}
+		if progress != nil {
+			progress(DownloadProgress{Total: resp.ContentLength, Attempt: attempt + 1, Attempts: maxGitHubAttempts})
+		}
+		archiveBytes, archiveHash, copyErr := storeArchiveWithProgress(resp.Body, destination, limits.MaxArchiveBytes, func(downloaded int64) {
+			if progress != nil {
+				progress(DownloadProgress{Downloaded: downloaded, Total: resp.ContentLength, Attempt: attempt + 1, Attempts: maxGitHubAttempts})
+			}
+		})
+		closeErr := resp.Body.Close()
+		if copyErr == nil && closeErr == nil {
+			return archiveBytes, archiveHash, nil
+		}
+		lastErr = copyErr
+		if lastErr == nil {
+			lastErr = closeErr
+		}
+	}
+	if lastErr == nil {
+		lastErr = errors.New("GitHub archive download failed")
+	}
+	return 0, "", lastErr
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func guardedGitHubDialContext(baseDial dialContextFunc, lookup lookupIPFunc) dialContextFunc {
@@ -601,13 +681,18 @@ func isPublicAddress(address netip.Addr) bool {
 }
 
 func storeArchive(reader io.Reader, destination io.Writer, maxBytes ...int64) (int64, string, error) {
-	limit := DefaultLimits().MaxArchiveBytes
-	if len(maxBytes) > 0 && maxBytes[0] > 0 {
-		limit = maxBytes[0]
-	}
+	return storeArchiveWithProgress(reader, destination, firstLimit(maxBytes), nil)
+}
+
+func storeArchiveWithProgress(reader io.Reader, destination io.Writer, maxBytes int64, progress func(int64)) (int64, string, error) {
+	limit := firstLimit([]int64{maxBytes})
 	limited := &io.LimitedReader{R: reader, N: limit + 1}
 	hasher := sha256.New()
-	written, err := io.Copy(io.MultiWriter(destination, hasher), limited)
+	writer := io.MultiWriter(destination, hasher)
+	if progress != nil {
+		writer = &archiveProgressWriter{writer: writer, report: progress}
+	}
+	written, err := io.Copy(writer, limited)
 	if err != nil {
 		return written, "", err
 	}
@@ -615,6 +700,33 @@ func storeArchive(reader io.Reader, destination io.Writer, maxBytes ...int64) (i
 		return written, "", fmt.Errorf("GitHub archive exceeds %s", formatLimit(limit))
 	}
 	return written, hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func firstLimit(maxBytes []int64) int64 {
+	limit := DefaultLimits().MaxArchiveBytes
+	if len(maxBytes) > 0 && maxBytes[0] > 0 {
+		limit = maxBytes[0]
+	}
+	return limit
+}
+
+type archiveProgressWriter struct {
+	writer     io.Writer
+	report     func(int64)
+	downloaded int64
+	lastReport time.Time
+}
+
+func (w *archiveProgressWriter) Write(data []byte) (int, error) {
+	n, err := w.writer.Write(data)
+	if n > 0 {
+		w.downloaded += int64(n)
+		if w.lastReport.IsZero() || time.Since(w.lastReport) >= 250*time.Millisecond {
+			w.lastReport = time.Now()
+			w.report(w.downloaded)
+		}
+	}
+	return n, err
 }
 
 func extractDownloadedArchive(ctx context.Context, archivePath, root, expectedRoot string, compressedBytes int64, configuredLimits ...Limits) error {

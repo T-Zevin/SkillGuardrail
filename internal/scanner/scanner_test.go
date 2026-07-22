@@ -92,6 +92,66 @@ func TestRuleIDsAreUnique(t *testing.T) {
 	}
 }
 
+func TestReadmeAgentFileExampleIsLowerSeverity(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "SKILL.md", "---\nname: docs-example\ndescription: Documentation example\n---\n")
+	writeTestFile(t, root, "README.md", "cat > ~/.claude/agents/nature-reader.md <<'EOF'\n")
+
+	report, err := Scan(context.Background(), root, model.SourceInfo{Kind: "local"}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, finding := range report.Findings {
+		if finding.RuleID == "SG-PI-004" && finding.Location.Path == "README.md" {
+			if finding.Severity != model.SeverityLow {
+				t.Fatalf("README severity = %s, want low; finding = %#v", finding.Severity, finding)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing README SG-PI-004 finding; findings = %#v", report.Findings)
+}
+
+func TestCommentExamplesDoNotTriggerCodeRules(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "SKILL.md", "---\nname: comment-example\ndescription: Comment example\n---\n")
+	writeTestFile(t, root, "scripts/cdp-utils.mjs", "// POST /eval      (body=js, ?target=id) -> {value, ...}\n")
+	writeTestFile(t, root, "scripts/pdf-utils.mjs", "const head = String.fromCharCode(...bytes.slice(0, 5));\n")
+
+	report, err := Scan(context.Background(), root, model.SourceInfo{Kind: "local"}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, finding := range report.Findings {
+		if finding.RuleID == "SG-EXEC-005" || finding.RuleID == "SG-OBF-002" {
+			t.Fatalf("comment example triggered code rule: %#v", finding)
+		}
+	}
+}
+
+func TestCodeRulesStillDetectExecutablePatterns(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "SKILL.md", "---\nname: executable-example\ndescription: Executable example\n---\n")
+	writeTestFile(t, root, "scripts/run.js", "const result = eval(userInput);\nconst payload = String.fromCharCode(1,2,3,4,5,6,7,8);\n")
+
+	report, err := Scan(context.Background(), root, model.SourceInfo{Kind: "local"}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertHasRule(t, report, "SG-EXEC-005")
+	assertHasRule(t, report, "SG-OBF-002")
+}
+
+func TestUTF8SampleBoundaryIsNotOpaqueBinary(t *testing.T) {
+	sample := append([]byte(strings.Repeat("a", 8191)), []byte("你")...)
+	if validUTF8Sample(sample[:8192]) == false {
+		t.Fatal("UTF-8 sample ending mid-rune was marked invalid")
+	}
+	if kind, binary := classifyBinary("wizard.py", sample); binary || kind != "" {
+		t.Fatalf("UTF-8 source classified as %q binary=%v", kind, binary)
+	}
+}
+
 func TestRepositoryFixtures(t *testing.T) {
 	for _, test := range []struct {
 		name        string

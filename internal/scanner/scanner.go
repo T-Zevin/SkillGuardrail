@@ -22,9 +22,9 @@ import (
 )
 
 const (
-	defaultMaxFiles     = 5_000
-	defaultMaxFileSize  = int64(2 << 20)  // 2 MiB
-	defaultMaxTotalSize = int64(20 << 20) // 20 MiB
+	defaultMaxFiles     = 10_000
+	defaultMaxFileSize  = int64(8 << 20)  // 8 MiB
+	defaultMaxTotalSize = int64(64 << 20) // 64 MiB
 
 	// Findings are attacker-controlled output. Keep both a package-wide ceiling
 	// and a per-rule/per-path ceiling so repeated indicators cannot amplify a
@@ -461,7 +461,11 @@ func (state *scanState) inspectText(ctx context.Context, path string, data []byt
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			if evidence, ok := rule.match(line); ok {
+			matchLine := line
+			if ignoresSourceComments(rule) {
+				matchLine = stripSourceComment(line, rel)
+			}
+			if evidence, ok := rule.match(matchLine); ok {
 				severity := contextualRuleSeverity(rule, rel)
 				state.addFinding(model.Finding{
 					RuleID: rule.id, Title: rule.title, Description: rule.description,
@@ -507,6 +511,14 @@ func (state *scanState) inspectText(ctx context.Context, path string, data []byt
 
 func contextualRuleSeverity(rule rule, path string) model.Severity {
 	severity := rule.severity
+	if strings.HasPrefix(rule.id, "SG-PI-") && isReadmeFile(path) {
+		// README files commonly document wrapper/installation commands. Keep the
+		// signal visible, but do not treat documentation examples as an
+		// equivalent of executable Skill instructions.
+		if severity.Rank() > model.SeverityLow.Rank() {
+			return model.SeverityLow
+		}
+	}
 	// Prompt-injection text in an instruction-bearing document is materially
 	// different from the same words inside a vendored parser or Cython source.
 	// Keep the signal, but lower its default impact outside human-facing skill
@@ -521,15 +533,65 @@ func contextualRuleSeverity(rule rule, path string) model.Severity {
 }
 
 func isInstructionFile(path string) bool {
+	return strings.EqualFold(filepath.Base(path), "SKILL.md")
+}
+
+func isReadmeFile(path string) bool {
 	base := strings.ToLower(filepath.Base(path))
-	if base == "skill.md" || base == "readme.md" || base == "readme_en.md" {
-		return true
+	return base == "readme.md" || base == "readme_en.md" || base == "readme_zh.md"
+}
+
+func ignoresSourceComments(rule rule) bool {
+	return rule.id == "SG-EXEC-005" || rule.id == "SG-OBF-002"
+}
+
+func stripSourceComment(line, path string) string {
+	markers := sourceCommentMarkers(path)
+	if len(markers) == 0 {
+		return line
 	}
+	quote := byte(0)
+	escaped := false
+	for i := 0; i < len(line); i++ {
+		ch := line[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if quote != 0 {
+			if ch == '\\' && quote != '`' {
+				escaped = true
+			} else if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		if ch == '\'' || ch == '"' || ch == '`' {
+			quote = ch
+			continue
+		}
+		for _, marker := range markers {
+			if !strings.HasPrefix(line[i:], marker) {
+				continue
+			}
+			if i == 0 || line[i-1] == ' ' || line[i-1] == '\t' {
+				return line[:i]
+			}
+		}
+	}
+	return line
+}
+
+func sourceCommentMarkers(path string) []string {
 	switch strings.ToLower(filepath.Ext(path)) {
-	case ".md", ".markdown", ".txt", ".yaml", ".yml", ".json", ".toml":
-		return true
+	case ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".c", ".h", ".cpp", ".hpp", ".swift", ".kt", ".kts", ".php":
+		return []string{"//"}
+	case ".py", ".pyw", ".sh", ".bash", ".zsh", ".fish", ".rb", ".pl", ".pm", ".ps1", ".yaml", ".yml", ".toml", ".ini", ".conf":
+		return []string{"#"}
+	case ".sql":
+		return []string{"--"}
 	default:
-		return false
+		return nil
 	}
 }
 
@@ -615,10 +677,24 @@ func classifyBinary(path string, data []byte) (string, bool) {
 	if len(sample) > 8192 {
 		sample = sample[:8192]
 	}
-	if bytes.IndexByte(sample, 0) >= 0 || !utf8.Valid(sample) {
+	if bytes.IndexByte(sample, 0) >= 0 || !validUTF8Sample(sample) {
 		return "opaque", true
 	}
 	return "", false
+}
+
+// validUTF8Sample treats an incomplete final rune as valid. A bounded sample
+// can end in the middle of a multibyte UTF-8 character; that is not evidence
+// of an opaque binary file (for example, a UTF-8 Python source file).
+func validUTF8Sample(data []byte) bool {
+	for len(data) > 0 {
+		r, size := utf8.DecodeRune(data)
+		if r == utf8.RuneError && size == 1 {
+			return !utf8.FullRune(data)
+		}
+		data = data[size:]
+	}
+	return true
 }
 
 func isBenignBinaryArtifact(path, kind string) bool {

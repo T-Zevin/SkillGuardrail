@@ -62,7 +62,7 @@ const (
 // rule signals, but it cannot prove that a skill is safe or that its residual
 // risk is zero.
 const SafetyClaimNotProvenSafe = "not-proven-safe"
-const RiskScoreMeaningDetectedSignals = "detected-rule-signals-not-probability"
+const RiskScoreMeaningDetectedSignals = "distinct-detected-rule-signals-not-probability"
 
 type Location struct {
 	Path   string `json:"path"`
@@ -152,18 +152,31 @@ func (r *ScanReport) Finalize() {
 		SeverityHigh: 20, SeverityCritical: 40,
 	}
 	r.RiskScore = 0
-	// RiskScore is a heuristic score for detected rule signals, not a
-	// probability of safety. Keep this claim explicit in every report.
+	// RiskScore is a heuristic score for distinct detected rule signals, not a
+	// probability of compromise or safety. Keep this claim explicit in every
+	// report.
 	r.RiskScoreMeaning = RiskScoreMeaningDetectedSignals
 	r.SafetyClaim = SafetyClaimNotProvenSafe
 	r.Highest = SeverityInfo
 	r.Stats = map[string]int{}
+	maxByRule := map[string]Severity{}
 	for _, finding := range r.Findings {
-		r.RiskScore += weights[finding.Severity]
 		r.Stats[string(finding.Severity)]++
 		if finding.Severity.Rank() > r.Highest.Rank() {
 			r.Highest = finding.Severity
 		}
+		if previous, ok := maxByRule[finding.RuleID]; !ok || finding.Severity.Rank() > previous.Rank() {
+			maxByRule[finding.RuleID] = finding.Severity
+		}
+	}
+	// Repeated matches of one rule are useful evidence in the detailed report,
+	// but must not inflate the package score merely because a capability is
+	// used in many files (for example, network access in a downloader).
+	for _, severity := range maxByRule {
+		r.RiskScore += weights[severity]
+	}
+	if r.Highest == SeverityCritical {
+		r.RiskScore = 100
 	}
 	if r.RiskScore > 100 {
 		r.RiskScore = 100

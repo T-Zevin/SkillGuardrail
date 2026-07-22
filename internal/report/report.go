@@ -399,13 +399,13 @@ func safetyClaim(language Language) string {
 
 func safetyBoundary(language Language, scan model.ScanReport) string {
 	if language == LanguageChinese {
-		message := "⚠️ 安全边界：评分只代表已发现的规则信号，不是风险概率；“通过”不等于零风险或安全证明。"
+		message := "⚠️ 安全边界：评分只代表已发现的不同规则信号，不是风险概率；“通过”不等于零风险或安全证明。"
 		if scan.UninspectedFiles > 0 {
 			message += fmt.Sprintf("仍有 %d 个文件未进行完整内容分析。", scan.UninspectedFiles)
 		}
 		return message
 	}
-	message := "⚠️ SAFETY BOUNDARY: the score counts detected rule signals, not the probability of compromise; PASS is not zero risk or a safety certificate."
+	message := "⚠️ SAFETY BOUNDARY: the score counts distinct detected rule signals, not the probability of compromise; PASS is not zero risk or a safety certificate."
 	if scan.UninspectedFiles > 0 {
 		message += fmt.Sprintf(" %d file(s) did not receive complete content analysis.", scan.UninspectedFiles)
 	}

@@ -41,3 +41,19 @@ func TestFinalizeKeepsSafetyClaimExplicit(t *testing.T) {
 		t.Fatalf("safety claim = %q, want %q", report.SafetyClaim, SafetyClaimNotProvenSafe)
 	}
 }
+
+func TestFinalizeDeduplicatesRepeatedRuleSignals(t *testing.T) {
+	report := NewReport("test", SourceInfo{Kind: "local"}, "/tmp/skill")
+	report.Findings = []Finding{
+		{RuleID: "SG-NET-004", Severity: SeverityMedium},
+		{RuleID: "SG-NET-004", Severity: SeverityMedium},
+		{RuleID: "SG-CRED-002", Severity: SeverityMedium},
+	}
+	report.Finalize()
+	if report.RiskScore != 16 {
+		t.Fatalf("deduplicated risk score = %d, want 16", report.RiskScore)
+	}
+	if report.Verdict != VerdictReview {
+		t.Fatalf("verdict = %s, want review", report.Verdict)
+	}
+}
