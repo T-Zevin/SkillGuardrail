@@ -1,6 +1,6 @@
-# Scientific Skill Benchmark
+# Agent Skill Security Benchmark
 
-This directory defines a reproducible, research-focused evaluation corpus for
+This directory defines a reproducible, cross-domain evaluation corpus for
 SkillGuardrail. It is intentionally separate from the unit-test fixtures:
 
 - **fixtures** prove that a rule fires or stays quiet under controlled input;
@@ -28,6 +28,15 @@ scientific literature, imaging, and reproducible data workflows.
 
 The file is a **candidate manifest**, not an assertion that any publisher or
 package is malicious, safe, endorsed, or compatible with every Agent host.
+
+## Program target
+
+The v0.1 corpus is a 108-skill pilot. The released benchmark target is **at
+least 1,100 public Agent Skills**, allocated across biomedical research,
+social-science and literature workflows, software engineering, machine
+learning/data, quantitative finance, and cross-domain automation. The target
+allocation, source-diversity rules, and inclusion requirements are defined in
+[`ROADMAP.md`](ROADMAP.md).
 
 ## Evaluation protocol
 
