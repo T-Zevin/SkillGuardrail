@@ -1,0 +1,9 @@
+id,source_repository,source_commit,skill_path,cohort,domain,status,notes
+cfdna-001,https://github.com/T-Zevin/cfDNA-skills,d86bd52920453369a8bf6908aa0c12680671e7a4,skills/cfdna-cancer-monitoring,cfdna-biomedical,cfdna-cancer-monitoring,candidate,independent biomedical cohort
+cfdna-002,https://github.com/T-Zevin/cfDNA-skills,d86bd52920453369a8bf6908aa0c12680671e7a4,skills/cfdna-cancer-profiling,cfdna-biomedical,cfdna-cancer-profiling,candidate,independent biomedical cohort
+cfdna-003,https://github.com/T-Zevin/cfDNA-skills,d86bd52920453369a8bf6908aa0c12680671e7a4,skills/cfdna-cancer-screening,cfdna-biomedical,cfdna-cancer-screening,candidate,independent biomedical cohort
+cfdna-004,https://github.com/T-Zevin/cfDNA-skills,d86bd52920453369a8bf6908aa0c12680671e7a4,skills/cfdna-discovery,cfdna-biomedical,cfdna-study-design,candidate,independent biomedical cohort
+cfdna-005,https://github.com/T-Zevin/cfDNA-skills,d86bd52920453369a8bf6908aa0c12680671e7a4,skills/cfdna-prenatal,cfdna-biomedical,cfdna-prenatal,candidate,independent biomedical cohort
+cfdna-006,https://github.com/T-Zevin/cfDNA-skills,d86bd52920453369a8bf6908aa0c12680671e7a4,skills/cfdna-replay,cfdna-biomedical,cfdna-reproducibility,candidate,independent biomedical cohort
+cfdna-007,https://github.com/T-Zevin/cfDNA-skills,d86bd52920453369a8bf6908aa0c12680671e7a4,skills/cfdna-tissue-origin,cfdna-biomedical,cfdna-tissue-origin,candidate,independent biomedical cohort
+cfdna-008,https://github.com/T-Zevin/cfDNA-skills,d86bd52920453369a8bf6908aa0c12680671e7a4,skills/cfdna-transplant,cfdna-biomedical,cfdna-transplant,candidate,independent biomedical cohort

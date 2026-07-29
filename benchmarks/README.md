@@ -11,10 +11,15 @@ SkillGuardrail. It is intentionally separate from the unit-test fixtures:
 
 ## v0.1 scope
 
-`manifests/scientific-100.csv` is a 100-skill, domain-stratified seed corpus.
+`manifests/scientific-100.csv` is a 100-skill, domain-stratified seed cohort.
 All entries point to individual directories in
 [`K-Dense-AI/scientific-agent-skills`](https://github.com/K-Dense-AI/scientific-agent-skills)
 at commit `ab2f84ab10597c59fac186ecda6d5edd5dcc8b92`.
+
+`manifests/cfdna-008.csv` adds eight biomedical Skill candidates from
+[`T-Zevin/cfDNA-skills`](https://github.com/T-Zevin/cfDNA-skills) at commit
+`d86bd52920453369a8bf6908aa0c12680671e7a4`. It is kept as an independent
+cohort so that source provenance remains visible in every aggregate result.
 
 The corpus prioritizes research workflows relevant to computational biology and
 biomedicine while retaining adjacent scientific work: genomics, single-cell and
@@ -66,7 +71,7 @@ with malicious intent. A static scan cannot prove a skill safe or malicious.
 
 | Cohort | Count | Purpose |
 | --- | ---: | --- |
-| Omics, genomics, and bioinformatics | 28 | Stress scripts, packages, data formats, and workflow references common in biomedical research. |
+| Omics, genomics, and bioinformatics | 36 | Stress scripts, packages, data formats, and workflow references common in biomedical research. |
 | Clinical, chemistry, and laboratory research | 19 | Cover sensitive-domain integrations, database clients, modeling, and lab automation. |
 | Literature and scientific writing | 15 | Cover web lookup, document handling, citations, and scientific communication. |
 | Research operations | 11 | Cover research search, notebooks, compliance, and supporting workflows. |
@@ -74,8 +79,7 @@ with malicious intent. A static scan cannot prove a skill safe or malicious.
 
 ## Next cohorts
 
-The v0.1 corpus deliberately starts from a single pinned upstream repository so
-that every entry has a stable taxonomy. v0.2 will add independent sources,
-including biomedical skill collections, literature-review skills, and the
-project's own cfDNA skills. These sources will be reported as separate cohorts;
-their results must not be merged without preserving source provenance.
+The initial corpus combines one large pinned upstream collection with a separate
+eight-skill cfDNA cohort. Later versions will add independent biomedical and
+literature-review collections. These sources will be reported as separate
+cohorts; their results must not be merged without preserving source provenance.
