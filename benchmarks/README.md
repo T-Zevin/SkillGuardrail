@@ -38,6 +38,23 @@ learning/data, quantitative finance, and cross-domain automation. The target
 allocation, source-diversity rules, and inclusion requirements are defined in
 [`ROADMAP.md`](ROADMAP.md).
 
+## Reproducible target-allocation chart
+
+The chart used in the project READMEs is generated from
+[`data/target-allocation.csv`](data/target-allocation.csv), which mirrors the
+roadmap allocation. It is a planning visualisation only; it contains no scan
+result, risk rate, verdict, or safety claim.
+
+```bash
+python3 benchmarks/scripts/render_target_allocation.py
+```
+
+The generated image is written to
+[`assets/benchmarks/target-allocation.svg`](../assets/benchmarks/target-allocation.svg).
+Once the locked corpus and review ledger exist, result charts must be generated
+from the raw JSON reports and must separately label completed, excluded, and
+incomplete samples.
+
 ## Evaluation protocol
 
 1. Resolve the exact repository commit recorded in the manifest.

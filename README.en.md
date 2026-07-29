@@ -122,6 +122,12 @@ SkillGuardrail is building a reproducible public Skill benchmark across biomedic
 - Every non-`PASS` result requires a human-review disposition;
 - Reports will be stratified by domain and source repository; a rule hit will never be presented as proof of malicious intent.
 
+<p align="center">
+  <img src="assets/benchmarks/target-allocation.svg" alt="SkillGuardrail target allocation for 1,100 public Agent Skills across six cohorts; this is a plan, not scan results" width="880">
+</p>
+
+> This visual shows the **planned target allocation**, not completed scans, risk prevalence, or a safety rating. Verdict distributions, rule frequencies, and reviewed false-positive data will be published only after the locked corpus has been scanned and reviewed.
+
 See the [benchmark method](benchmarks/README.md) and [1,100+ roadmap](benchmarks/ROADMAP.md).
 
 ## Common options

@@ -122,6 +122,12 @@ SkillGuardrail 正在建立可复现的公开 Skill 安全基准，覆盖生物�
 - 每个非 `PASS` 结果必须人工复核；
 - 报告会按领域和来源仓库分层，绝不把“规则命中”表述为“恶意”。
 
+<p align="center">
+  <img src="assets/benchmarks/target-allocation.svg" alt="SkillGuardrail 1100 个公开 Agent Skill 的六个领域基准目标构成图；这是计划分配而非扫描结果" width="880">
+</p>
+
+> 图中是锁定基准前的**目标样本分层**，不是已扫描数量、风险命中率或安全评级。完成全部扫描及人工复核后，才会另外发布判定分布、规则频率和误报复核数据。
+
 查看 [基准方法](benchmarks/README.md) 与 [1,100+ 路线图](benchmarks/ROADMAP.md)。
 
 ## 常用参数
