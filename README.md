@@ -11,276 +11,141 @@
   <a href="go.mod"><img alt="Go 版本" src="https://img.shields.io/github/go-mod/go-version/T-Zevin/SkillGuardrail?logo=go"></a>
   <a href="LICENSE"><img alt="许可证" src="https://img.shields.io/github/license/T-Zevin/SkillGuardrail"></a>
   <a href="#平台支持"><img alt="平台" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-5c6ac4"></a>
-  <a href="https://github.com/T-Zevin/SkillGuardrail/commits/main"><img alt="最近提交" src="https://img.shields.io/github/last-commit/T-Zevin/SkillGuardrail"></a>
 </p>
 
 ![SkillGuardrail：Agent Skills 安全护栏](assets/skillguardrail-hero.png)
 
-**在 Agent 读取之前先扫描，只安装你真正信任的 Skill。**
+**别把 GitHub 上的 Skill 直接装进 Agent。先隔离、扫描、判定，再安装。**
 
-SkillGuardrail 是一个开源的 Agent Skills 安装前安全扫描器和受控安装工具。它把公开 GitHub 包下载到私有隔离区，并把本地目录复制成有资源上限的私有快照；完成确定性静态检查、能力推断和策略判定，得到明确批准后才写入 Codex、Claude Code、Cursor、Gemini CLI 或 OpenClaw 的 Skill 目录。
+SkillGuardrail 是面向 Codex、Claude Code、Cursor、Gemini CLI 与 OpenClaw 的开源 Agent Skill 安全护栏：它在不运行包内代码的前提下检查不可信 Skill，输出可解释的策略判定，并将已批准的安装绑定到来源 commit、内容指纹与外部 receipt。
 
-> SkillGuardrail 只能降低风险，不能证明一个 Skill 绝对安全。请继续使用最小权限、Agent 沙箱和人工复核。
+> [!IMPORTANT]
+> `PASS` 只代表当前规则未发现已知阻断信号，不是零风险或安全认证。未知来源仍应最小权限、沙箱运行并人工复核。
 
-| **先隔离** | **不止打分，更能执行策略** | **安装结果可验证** |
+| 隔离优先 | 策略判定 | 可验证安装 |
 |:---|:---|:---|
-| 在不运行包内代码的前提下检查不可信 Skill。 | 将风险发现与能力链转化为明确、可执行的判定。 | 用来源 commit、内容指纹和外部 receipt 绑定安装结果。 |
+| 不执行 Skill 脚本、解释器或安装钩子。 | 结合规则信号与能力链给出 `PASS / REVIEW / BLOCK / CRITICAL`。 | 安装后可检查文件是否偏离当时审核的来源与指纹。 |
 
-## 目录
+## 为什么需要它？
 
-- [核心区别](#核心区别)
-- [安装](#安装)
-  - [平台支持](#平台支持)
-- [使用](#使用)
-- [使用案例](#使用案例)
-- [命令与参数说明](#命令与参数说明)
-- [判定与退出码](#判定与退出码)
-- [相关工作](#相关工作)
-- [许可证](#许可证)
-
-## 核心区别
-
-它不只是输出一份扫描分数，还覆盖完整安装事务：
+Skill 不只是 Markdown：它可以带入指令、脚本、依赖、网络访问与外部内容。SkillGuardrail 重点检查提示注入、敏感凭据访问、网络外传、远程下载、危险命令、持久化、混淆、二进制，以及“敏感读取 + 外联”“解码 + 执行”等能力链。
 
 ```text
-不可信来源 → 隔离获取 → 静态扫描 → 风险判定 → 明确批准
-                                              ↓
-                                  原子安装 + 文件级 receipt
-                                              ↓
-                                         后续篡改验证
+不可信来源 → 私有隔离区 → 静态扫描 → 策略判定 → 明确批准 → 原子安装 → 后续验证
 ```
 
-- GitHub 可变分支先解析成不可变 commit；
-- 仅从 GitHub 官方 API 和 codeload 获取公开仓库；
-- 安全解包，拒绝路径穿越、软硬链接、特殊文件、大小写碰撞和压缩炸弹；
-- 扫描过程中不执行 Skill 脚本、解释器、包管理器或安装钩子；
-- 检查 Prompt Injection、敏感凭据访问、外传、危险命令、持久化、混淆、二进制和供应链风险；
-- 安装前再次扫描 staging 内容，随后在同一文件系统原子切换；
-- 权威 receipt 保存在 Skill 目录之外的私有状态目录，并绑定规范化安装路径；包内 `.skillguardrail.lock` 只是便于查看的镜像，不能给自己背书；
-- receipt 记录来源 commit、归档哈希、包指纹、条目类型与权限、逐文件 SHA-256、风险发现和能力清单；
-- `verify` 可以发现安装后的新增、删除和修改。
+完整规则见 [规则目录](docs/rules.md)，安全边界与已知限制见 [威胁模型](docs/threat-model.md)。
 
 ## 安装
 
-使用 Go 1.23 或更高版本：
-
 ```bash
+# Homebrew（macOS / Linux）
+brew install T-Zevin/tap/skillguardrail
+
+# 或从源码安装（Go 1.23+）
 go install github.com/T-Zevin/SkillGuardrail/cmd/skillguardrail@latest
 ```
 
-通过该方式安装时，工具版本来自 Go 模块构建信息；官方 Release 归档还会写入标签对应的提交和构建时间。
-
-发布版本可从 [GitHub Releases](https://github.com/T-Zevin/SkillGuardrail/releases) 下载，并使用 `checksums.txt` 校验。
-
-通过 Homebrew 安装：
-
-```bash
-brew install T-Zevin/tap/skillguardrail
-```
-
-已安装旧版本时更新：
-
-```bash
-brew update
-brew upgrade T-Zevin/tap/skillguardrail
-```
+也可从 [GitHub Releases](https://github.com/T-Zevin/SkillGuardrail/releases) 下载二进制，并校验 `checksums.txt`。
 
 ### 平台支持
 
-macOS、Linux 和 Windows 均支持扫描及报告输出。受控 `install` 和 `verify` 初版仅在 macOS 与 Linux 启用：除普通权限位外，工具还会清除并验证扩展 ACL/POSIX ACL；如果文件系统无法证明 ACL 不存在，也会默认拒绝。其他平台不会启用受控操作，但 Windows 用户仍可先扫描，再手动安装已复核文件。
+macOS、Linux、Windows 均支持扫描和报告。受控 `install` / `verify` 当前在 macOS 与 Linux 启用；Windows 用户可以扫描后手动安装已复核的文件。
 
-macOS 上的受控操作只会为 ACL 处理调用固定系统工具 `/bin/chmod` 和 `/bin/ls`，不会调用 Skill 自带的可执行文件、脚本、解释器或安装钩子。
-
-## 使用
-
-扫描本地 Skill：
+## 30 秒上手
 
 ```bash
-skillguardrail scan ./my-skill
-```
+# 扫描本地 Skill
+skillguardrail scan ./my-skill -cn
 
-扫描公开 GitHub 仓库：
+# 扫描公开 GitHub 仓库
+skillguardrail scan -cn https://github.com/owner/repository
 
-```bash
-skillguardrail scan https://github.com/example/useful-skill
-```
-
-如果仓库根目录没有 `SKILL.md`，但只包含一个嵌套 Skill，SkillGuardrail 会自动选择该 Skill 目录进行扫描。若仓库包含多个嵌套 Skill，则保留仓库级扫描结果，避免在没有用户确认时自动选错安装对象。
-
-在交互式终端中，扫描会显示阶段进度条，提示当前处于来源解析、隔离获取或静态分析阶段。进度信息写入 stderr；JSON、SARIF、重定向日志和其他非交互输出不会被进度内容污染。
-
-默认 `scan` 超时为 20 分钟，`install` 为 15 分钟，因为公共 GitHub 归档在代理或受限网络下可能较慢。下载时终端会显示归档的已下载/总量；传输中断后会清空不完整的临时归档并有限重试。网络特别慢时可显式使用 `--timeout 25m`。
-
-远程来源默认有明确边界：GitHub 压缩归档 64 MiB、解包后文件总量 128 MiB、tar 未压缩流 160 MiB、来源条目 10,000 个。这些限制用于防止不可信归档耗尽磁盘或内存，同时覆盖常见的多 Skill 仓库。更大的仓库可以在内置硬上限内显式提高 `--max-archive-size`、`--max-extract-size`、`--max-uncompressed-size` 和 `--max-source-entries`。
-
-超过文本分析预算的大文件仍会纳入完整包指纹；报告会把已知规则信号评分、扫描状态和内容覆盖率分开，并列出仅完成元数据/哈希检查的文件。评分不是被攻陷概率；`0` 只代表当前规则没有命中已知信号，不代表剩余风险为零。每份报告都会标注 `not-proven-safe`（未证明安全）。看起来干净的结果只是有边界的静态分析结果，不是安全证明。
-
-输出 JSON 或 SARIF：
-
-```bash
+# 输出 JSON 或 SARIF，供 CI 使用
 skillguardrail scan ./my-skill --format json
 skillguardrail scan ./my-skill --format sarif --output skillguardrail.sarif
+
+# 仅在通过人工确认后受控安装到 Codex
+skillguardrail install https://github.com/owner/repository --target codex --yes
+
+# 验证已安装 Skill 是否被改动
+skillguardrail verify skill-name --target codex
 ```
 
-文本报告默认使用英文；加上 `-cn` 后切换为简体中文，并会以摘要表、评分条、项目结构树、能力表和发现表展示结果：
+远程来源会先解析为不可变 commit，再下载到私有隔离区。交互终端会显示进度条；网络较慢时可增加 `--timeout 25m`。默认只接受公开 GitHub HTTPS 仓库；根目录有一个 Skill，或仅包含一个嵌套 Skill 时可直接扫描。
 
-```bash
-skillguardrail scan ./my-skill -cn
-```
+## 判定含义
 
-`-cn` 只影响人类可读的文本输出；JSON 和 SARIF 保持稳定的机器可读字段，适合 CI 和下游脚本。
-终端支持颜色时默认会启用颜色；只有在日志或 CI 需要纯文本时才添加 `--no-color`。
+| 判定 | 含义 | 默认行为 |
+| --- | --- | --- |
+| `PASS` | 未发现已知阻断信号；仍需核对来源和能力 | 可继续人工决策 |
+| `REVIEW` | 中风险能力或累计信号需要确认 | 要求明确决定 |
+| `BLOCK` | High 信号或风险阈值达到 | 拒绝受控安装 |
+| `CRITICAL` | 严重行为链或完整性问题 | 始终拒绝 |
 
-扫描通过后安装到 Codex：
-
-```bash
-skillguardrail install https://github.com/example/useful-skill --target codex --yes
-```
-
-目标目录和权威状态根目录必须归当前用户所有，且不能让其他用户写入。自定义 `--state-dir` 在 Unix 上应使用 `0700` 权限。使用 `--replace` 时，旧 Skill 会保存在唯一的私有备份目录，成功后命令会输出具体路径。
-
-验证已安装内容是否变化：
-
-```bash
-skillguardrail verify my-skill --target codex
-skillguardrail verify ~/.codex/skills/my-skill
-```
-
-默认权威 receipt 位于当前用户的 SkillGuardrail 配置状态目录。受控操作会验证目录所有者与父目录替换边界，并拒绝未清除的文件系统 ACL，避免出现 receipt 未记录的额外访问权限。备份或自动化场景可通过 `SKILLGUARDRAIL_STATE_HOME` 或安装、验证命令的 `--state-dir` 指定其他位置，但它必须保持私有并位于 Agent 的 Skill 发现目录之外。该机制用于发现本地漂移，并不是发布者签名；若同一用户权限下的进程可以同时改写 Skill 和外部状态目录，它仍可伪造本地历史。
-
-远程源支持公开 GitHub HTTPS 仓库。仓库根目录有 Skill，或只有一个嵌套 Skill 时可以直接扫描；多个嵌套 Skill 会保留仓库级结果，等待用户明确选择。
+风险分数统计的是不同规则信号，**不是**被攻击的概率。扫描不完整时，受控安装会默认失败。
 
 ## 使用案例
 
-以下案例扫描公开仓库 [`T-Zevin/cfDNA-skills`](https://github.com/T-Zevin/cfDNA-skills)。它展示的是静态规则扫描输出：`通过` 表示未命中已知阻断信号，不表示仓库没有剩余风险，仍应复核来源与能力。
+以下案例扫描公开仓库 [`T-Zevin/cfDNA-skills`](https://github.com/T-Zevin/cfDNA-skills)。截图中的 `PASS` 表示未命中已知阻断信号，不代表该仓库被证明安全。
 
 ```bash
-skillguardrail scan https://github.com/T-Zevin/cfDNA-skills -cn
+skillguardrail scan -cn https://github.com/T-Zevin/cfDNA-skills
 ```
 
-### 1. 扫描摘要：来源、覆盖率与可复核指纹
+### 扫描摘要：判定、覆盖率与指纹
 
 <p align="center">
   <img src="assets/examples/scan-cn-summary.png" alt="中文扫描摘要：cfDNA-skills 通过，已知信号 0/100，内容覆盖 128/128" width="880">
 </p>
 
-报告明确展示判定、已知信号、内容覆盖率和 SHA-256 包指纹；这里的 `128/128` 表示全部 128 个文件获得了内容分析，而不是“绝对安全”。
-
-### 2. 项目结构：先看工具实际审核了什么
+### 项目结构：工具实际审查了什么
 
 <p align="center">
   <img src="assets/examples/scan-cn-tree.png" alt="中文项目结构树：cfDNA-skills 的目录和文件预览" width="820">
 </p>
 
-结构树让审阅者快速了解仓库包含的文档、配置、评测数据和嵌套目录，避免仅凭 README 决定是否安装。
-
-### 3. 多 Skill 仓库：信息提示而非恶意判定
+### 多 Skill 仓库：信息提示，不等于恶意
 
 <p align="center">
   <img src="assets/examples/scan-cn-multi-skill.png" alt="中文发现详情：SG-MAN-004 多 Skill 仓库信息提示" width="880">
 </p>
 
-该仓库包含多个嵌套 `SKILL.md`，因此 `SG-MAN-004` 以信息级别提示你分别扫描并安装具体子目录，而不会把正常的多 Skill 仓库误判为高风险。
+多个嵌套 `SKILL.md` 会触发信息级 `SG-MAN-004`：应分别扫描和安装具体子 Skill，而不应把正常的多 Skill 仓库直接误判为高风险。
 
-## 命令与参数说明
+## 1,100+ 跨领域基准计划
 
-所有命令都可使用 `skillguardrail <command> --help` 查看运行版本的完整帮助。`SOURCE` 可以是本地 Skill 目录、本地 `SKILL.md`，或公开 GitHub 仓库根 URL；远程仓库只接受 `https://github.com/OWNER/REPO` 形式。
+SkillGuardrail 正在建立可复现的公开 Skill 安全基准，覆盖生物医学与科研、社科与文献综述、IT/DevOps、机器学习与数据、量化金融和通用自动化。
 
-### `scan SOURCE`：只扫描，不写入 Agent 目录
+- 当前试运行队列：108 个固定 commit 的科研与 cfDNA Skill；
+- 正式目标：至少 1,100 个公开 Skill；
+- 每个非 `PASS` 结果必须人工复核；
+- 报告会按领域和来源仓库分层，绝不把“规则命中”表述为“恶意”。
 
-```bash
-skillguardrail scan SOURCE [options]
-```
+查看 [基准方法](benchmarks/README.md) 与 [1,100+ 路线图](benchmarks/ROADMAP.md)。
 
-| 参数 | 默认值 | 说明 |
-| --- | --- | --- |
-| `-cn` | 关闭 | 将人类可读文本报告切换为简体中文；JSON/SARIF 字段保持不变。 |
-| `--format text\|json\|sarif` | `text` | 选择报告格式。`json` 与 `sarif` 适用于 CI 或后续脚本。 |
-| `--output PATH` | 标准输出 | 将报告写入文件；使用 `-` 保持标准输出。写入文件时不显示交互进度条。 |
-| `--fail-on info\|low\|medium\|high\|critical` | `medium` | 发现达到该级别的信号时返回退出码 `1`。例如仅希望 High/critical 退出失败，可设为 `--fail-on high`。 |
-| `--timeout DURATION` | `20m` | 获取和扫描的总时间上限，如 `--timeout 25m`。 |
-| `--no-color` | 关闭 | 禁用 ANSI 颜色，适合日志、CI 或纯文本文件。 |
+## 常用参数
 
-**内容分析边界**：这些参数控制本地扫描量；超过边界的文件仍会纳入包指纹和结构检查，但不会完成完整文本分析。
+| 参数 | 用途 |
+| --- | --- |
+| `-cn` | 中文人类可读报告；可放在来源前或后。 |
+| `--format text\|json\|sarif` | 文本、机器可读 JSON 或 SARIF。 |
+| `--output PATH` | 将报告写入文件。 |
+| `--fail-on high` | 将 High/critical 作为脚本或 CI 的失败阈值。 |
+| `--timeout 25m` | 为慢速 GitHub 下载延长总超时。 |
+| `--no-color` | 仅用于日志或 CI 的纯文本输出。 |
 
-| 参数 | 默认值 | 说明 |
-| --- | --- | --- |
-| `--max-files N` | `10000` | 包内最多扫描的条目数。 |
-| `--max-file-size BYTES` | `8388608`（8 MiB） | 单个文件可进行内容分析的最大字节数。 |
-| `--max-total-size BYTES` | `67108864`（64 MiB） | 所有内容分析文件合计的最大字节数。 |
-
-**GitHub 来源边界**：用于限制下载和解包阶段，防止不可信 archive 耗尽资源。
-
-| 参数 | 默认值 | 说明 |
-| --- | --- | --- |
-| `--max-archive-size BYTES` | `67108864`（64 MiB） | 下载的压缩 GitHub archive 最大大小。 |
-| `--max-extract-size BYTES` | `134217728`（128 MiB） | 解包并复制到隔离区的文件总大小上限。 |
-| `--max-uncompressed-size BYTES` | `167772160`（160 MiB） | tar 解压数据流最大大小。 |
-| `--max-source-entries N` | `10000` | archive 最多允许的来源条目数。 |
-
-### `install SOURCE`：扫描、人工批准后受控安装
-
-```bash
-skillguardrail install SOURCE --target codex --yes [options]
-```
-
-| 参数 | 默认值 | 说明 |
-| --- | --- | --- |
-| `--target codex\|claude\|cursor\|gemini\|openclaw` | 无 | 选择内置 Agent Skill 目录；与 `--dir` 至少提供一个。 |
-| `--dir PATH` | 无 | 指定自定义的 Skill 发现目录。 |
-| `--yes` | 关闭 | 必填确认项；没有它只会显示报告，不会写入文件。 |
-| `--allow-risk info\|low\|medium` | `medium` | 允许安装的最高复核级别；`block` 与 `critical` 永远不能绕过。 |
-| `--replace` | 关闭 | 安全备份并原子替换同名已安装 Skill。 |
-| `--state-dir PATH` | 工具默认私有状态目录 | 保存权威 receipt 的私有目录；Unix 上应为 `0700`，且位于 Agent Skill 目录之外。 |
-| `-cn`、`--no-color`、`--timeout DURATION` | — | 分别控制中文报告、颜色和总时间上限（安装默认 `15m`）。 |
-| `--max-archive-size`、`--max-extract-size`、`--max-uncompressed-size`、`--max-source-entries` | 同 `scan` | 调整 GitHub 获取和隔离阶段的资源边界。 |
-
-### `verify PATH`：验证受控安装后是否被篡改
-
-```bash
-skillguardrail verify PATH [options]
-skillguardrail verify NAME --target codex [options]
-```
-
-| 参数 | 默认值 | 说明 |
-| --- | --- | --- |
-| `--target AGENT` | 无 | 当第一个位置参数是安装名称而不是路径时，用于定位内置 Agent 的 Skill 目录。 |
-| `--dir PATH` | 无 | 使用自定义 Skill 目录定位安装名称。 |
-| `--format text\|json` | `text` | 输出人类可读结果或机器可读 JSON。 |
-| `--state-dir PATH` | 工具默认私有状态目录 | 指定保存权威 receipt 的状态目录，必须与安装时一致。 |
-
-### 其他命令
+完整参数请运行：
 
 ```bash
 skillguardrail --help
 skillguardrail scan --help
 skillguardrail install --help
 skillguardrail verify --help
-skillguardrail version
 ```
 
-## 判定与退出码
+## 相关工作与许可证
 
-| 判定 | 默认行为 |
-| --- | --- |
-| `pass` | 未发现已知阻断信号；不代表零风险，仍需复核来源和能力 |
-| `review` | 存在 Medium 风险，需要明确决定 |
-| `block` | 存在 High 风险或累计风险达到阈值，禁止安装 |
-| `critical` | 关键行为链或安全边界破坏，禁止覆盖 |
+本项目是独立实现，设计参考 [NVIDIA SkillSpector](https://github.com/NVIDIA/SkillSpector)、[Cisco AI Defense Skill Scanner](https://github.com/cisco-ai-defense/skill-scanner)、[Agent Skills 规范](https://agentskills.io/specification)与 [OWASP Agentic Skills Top 10](https://owasp.org/www-project-agentic-skills-top-10/)，不代表上述项目的认证或背书。
 
-| 退出码 | 含义 |
-| ---: | --- |
-| `0` | 策略允许或命令成功 |
-| `1` | 需要复核或策略拒绝 |
-| `2` | 参数、获取、解析、扫描或 I/O 失败，结果不完整 |
-| `3` | 操作取消或缺少明确的 `--yes` |
-
-规则目录见 [docs/rules.md](docs/rules.md)，安全边界与已知限制见 [docs/threat-model.md](docs/threat-model.md)。
-
-## 相关工作
-
-项目设计参考了 [NVIDIA SkillSpector](https://github.com/NVIDIA/SkillSpector)、[Cisco AI Defense Skill Scanner](https://github.com/cisco-ai-defense/skill-scanner)、[Agent Skills 规范](https://agentskills.io/specification)和 [OWASP Agentic Skills Top 10](https://owasp.org/www-project-agentic-skills-top-10/)，代码与安全安装事务为独立实现，不代表上述项目对 SkillGuardrail 的认证或背书。
-
-## 许可证
-
-[Apache License 2.0](LICENSE)
+基于 [Apache License 2.0](LICENSE) 发布。
