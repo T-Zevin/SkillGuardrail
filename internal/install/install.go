@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/T-Zevin/SkillGuardrail/internal/model"
+	"github.com/T-Zevin/SkillGuardrail/internal/policy"
 	"github.com/T-Zevin/SkillGuardrail/internal/scanner"
 )
 
@@ -37,12 +38,14 @@ var validCommit = regexp.MustCompile(`^[a-f0-9]{40}$`)
 var validMode = regexp.MustCompile(`^[0-7]{4}$`)
 
 type Options struct {
-	Target      string
-	Directory   string
-	AllowedRisk model.Severity
-	Replace     bool
-	ToolVersion string
-	StateDir    string
+	Target       string
+	Directory    string
+	AllowedRisk  model.Severity
+	Replace      bool
+	ToolVersion  string
+	StateDir     string
+	Baseline     *policy.Baseline
+	BaselinePath string
 }
 
 type Result struct {
@@ -166,6 +169,12 @@ func Install(ctx context.Context, root string, report model.ScanReport, options 
 	stageReport, err := scanner.Scan(ctx, stageSkill, report.Source, options.ToolVersion)
 	if err != nil {
 		return Result{}, fmt.Errorf("rescan staged package: %w", err)
+	}
+	if options.Baseline != nil {
+		policy.ApplyBaseline(&stageReport, *options.Baseline, options.BaselinePath, time.Now().UTC())
+		if stageReport.Baseline.State != "applied" {
+			return Result{}, errors.New("staged package no longer matches the reviewed baseline")
+		}
 	}
 	if err := stageReport.CheckInstallPolicy(options.AllowedRisk); err != nil {
 		return Result{}, fmt.Errorf("staged package policy denies installation: %w", err)
@@ -759,7 +768,7 @@ func copySkillTree(ctx context.Context, sourceRoot, destinationRoot string) erro
 		if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == "node_modules" || entry.Name() == ".venv") {
 			return filepath.SkipDir
 		}
-		if entry.Name() == LockFileName {
+		if entry.Name() == LockFileName || entry.Name() == ".skillguardrail-baseline.json" {
 			return nil
 		}
 		info, err := entry.Info()

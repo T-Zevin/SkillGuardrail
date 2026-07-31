@@ -137,6 +137,12 @@ func writeText(w io.Writer, scan model.ScanReport, color bool, language Language
 		{t.summaryCoverage, coverage},
 		{t.summaryFingerprint, fingerprint},
 	}
+	if scan.Source.SkillPath != "" {
+		rows = append(rows, []string{t.summaryScope, SafeText(scan.Source.SkillPath)})
+	}
+	if scan.Baseline.State != "" {
+		rows = append(rows, []string{t.summaryBaseline, baselineSummary(scan.Baseline, language)})
+	}
 	if scan.Metadata.Name != "" {
 		rows = append(rows, []string{t.summarySkill, SafeText(scan.Metadata.Name)})
 	}
@@ -152,9 +158,13 @@ func writeText(w io.Writer, scan model.ScanReport, color bool, language Language
 	if len(scan.Capabilities) > 0 {
 		capRows := make([][]string, 0, len(scan.Capabilities))
 		for _, capability := range scan.Capabilities {
-			capRows = append(capRows, []string{localizedSeverity(capability.Risk, language), SafeText(capability.Name)})
+			capRows = append(capRows, []string{
+				localizedSeverity(capability.Risk, language),
+				SafeText(capability.Name),
+				capabilityEvidence(capability.Evidence),
+			})
 		}
-		if err := writeTable(w, t.capabilitiesTitle, []string{t.severity, t.capability}, capRows); err != nil {
+		if err := writeTable(w, t.capabilitiesTitle, []string{t.severity, t.capability, t.evidence}, capRows); err != nil {
 			return err
 		}
 	}
@@ -181,10 +191,10 @@ func writeText(w io.Writer, scan model.ScanReport, color bool, language Language
 		}
 		localized := localizeFinding(finding, language)
 		findingRows = append(findingRows, []string{
-			localizedSeverity(finding.Severity, language), SafeText(finding.RuleID), truncate(location, 64), truncate(localized.Title, 72),
+			localizedSeverity(finding.Severity, language), findingDisposition(finding, language), SafeText(finding.RuleID), truncate(location, 64), truncate(localized.Title, 72),
 		})
 	}
-	if err := writeTable(w, fmt.Sprintf("%s (%d)", t.findingsTitle, len(findings)), []string{t.severity, t.rule, t.location, t.title}, findingRows); err != nil {
+	if err := writeTable(w, fmt.Sprintf("%s (%d)", t.findingsTitle, len(findings)), []string{t.severity, t.status, t.rule, t.location, t.title}, findingRows); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(w, "\n%s\n", t.detailsTitle); err != nil {
@@ -224,30 +234,35 @@ func writeText(w io.Writer, scan model.ScanReport, color bool, language Language
 				return err
 			}
 		}
+		if finding.IsAccepted() {
+			if _, err := fmt.Fprintf(w, "  %s: %s\n", t.accepted, SafeText(finding.AcceptanceReason)); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
 
 type reportText struct {
-	summaryTitle, field, value, summaryVerdict, summaryRisk, summaryScore, summarySafetyClaim, summaryHighest, summarySource, summaryFiles, summaryCoverage, summaryFingerprint, summarySkill string
-	verdictLevelsTitle, level, meaning, architectureTitle, capabilitiesTitle, severity, capability, findingsTitle, rule, location, title, detailsTitle, evidence, fix, noFindings             string
+	summaryTitle, field, value, summaryVerdict, summaryRisk, summaryScore, summarySafetyClaim, summaryHighest, summarySource, summaryScope, summaryFiles, summaryCoverage, summaryFingerprint, summarySkill, summaryBaseline string
+	verdictLevelsTitle, level, meaning, architectureTitle, capabilitiesTitle, severity, status, capability, findingsTitle, rule, location, title, detailsTitle, evidence, fix, accepted, noFindings                          string
 }
 
 func textFor(language Language) reportText {
 	if language == LanguageChinese {
 		return reportText{
-			summaryTitle: "📊 扫描摘要", field: "字段", value: "值", summaryVerdict: "判定", summaryRisk: "已知信号", summaryScore: "信号条", summarySafetyClaim: "安全结论", summaryHighest: "最高级别", summarySource: "来源", summaryFiles: "文件", summaryCoverage: "内容覆盖", summaryFingerprint: "指纹", summarySkill: "Skill",
+			summaryTitle: "📊 扫描摘要", field: "字段", value: "值", summaryVerdict: "判定", summaryRisk: "已知信号", summaryScore: "信号条", summarySafetyClaim: "安全结论", summaryHighest: "最高级别", summarySource: "来源", summaryScope: "审查范围", summaryFiles: "文件", summaryCoverage: "内容覆盖", summaryFingerprint: "指纹", summarySkill: "Skill", summaryBaseline: "复核基线",
 			verdictLevelsTitle: "🧭 判定等级", level: "等级", meaning: "含义",
 			architectureTitle: "🌳 项目结构",
-			capabilitiesTitle: "🧩 能力清单", severity: "级别", capability: "能力", findingsTitle: "🔎 发现", rule: "规则", location: "位置", title: "标题", detailsTitle: "发现详情", evidence: "证据", fix: "建议",
+			capabilitiesTitle: "🧩 能力清单", severity: "级别", status: "状态", capability: "能力", findingsTitle: "🔎 发现", rule: "规则", location: "位置", title: "标题", detailsTitle: "发现详情", evidence: "证据", fix: "建议", accepted: "已接受原因",
 			noFindings: "未发现已知规则命中。这个结果不是零风险证明，请仍然复核来源、能力和未分析内容。",
 		}
 	}
 	return reportText{
-		summaryTitle: "📊 SUMMARY", field: "FIELD", value: "VALUE", summaryVerdict: "VERDICT", summaryRisk: "KNOWN SIGNALS", summaryScore: "SIGNAL BAR", summarySafetyClaim: "SAFETY CLAIM", summaryHighest: "HIGHEST", summarySource: "SOURCE", summaryFiles: "FILES", summaryCoverage: "CONTENT COVERAGE", summaryFingerprint: "FINGERPRINT", summarySkill: "SKILL",
+		summaryTitle: "📊 SUMMARY", field: "FIELD", value: "VALUE", summaryVerdict: "VERDICT", summaryRisk: "KNOWN SIGNALS", summaryScore: "SIGNAL BAR", summarySafetyClaim: "SAFETY CLAIM", summaryHighest: "HIGHEST", summarySource: "SOURCE", summaryScope: "SCOPE", summaryFiles: "FILES", summaryCoverage: "CONTENT COVERAGE", summaryFingerprint: "FINGERPRINT", summarySkill: "SKILL", summaryBaseline: "REVIEW BASELINE",
 		verdictLevelsTitle: "🧭 VERDICT LEVELS", level: "LEVEL", meaning: "MEANING",
 		architectureTitle: "🌳 PROJECT ARCHITECTURE",
-		capabilitiesTitle: "🧩 CAPABILITIES", severity: "SEVERITY", capability: "CAPABILITY", findingsTitle: "🔎 FINDINGS", rule: "RULE", location: "LOCATION", title: "TITLE", detailsTitle: "DETAILS", evidence: "Evidence", fix: "Fix",
+		capabilitiesTitle: "🧩 CAPABILITIES", severity: "SEVERITY", status: "STATUS", capability: "CAPABILITY", findingsTitle: "🔎 FINDINGS", rule: "RULE", location: "LOCATION", title: "TITLE", detailsTitle: "DETAILS", evidence: "Evidence", fix: "Fix", accepted: "Accepted reason",
 		noFindings: "No known rule matches. This is not a zero-risk claim; review provenance, capabilities, and uninspected content before installation.",
 	}
 }
@@ -267,6 +282,70 @@ func verdictRows(language Language) [][]string {
 		{"BLOCK", "High-risk signal or threshold reached; installation is refused by default."},
 		{"CRITICAL", "Critical behavior chain or integrity failure; installation is always refused."},
 	}
+}
+
+func baselineSummary(status model.BaselineStatus, language Language) string {
+	if language == LanguageChinese {
+		switch status.State {
+		case "applied":
+			value := fmt.Sprintf("已应用；接受 %d 项", status.AcceptedFindings)
+			if status.ExpiredEntries > 0 {
+				value += fmt.Sprintf("；过期 %d 项", status.ExpiredEntries)
+			}
+			if status.NonSuppressibleMatches > 0 {
+				value += fmt.Sprintf("；%d 项高/严重发现不可接受", status.NonSuppressibleMatches)
+			}
+			return value
+		case "source-mismatch":
+			return "未应用：当前内容指纹与基线不匹配"
+		}
+		return SafeText(status.State)
+	}
+	switch status.State {
+	case "applied":
+		value := fmt.Sprintf("applied; %d accepted", status.AcceptedFindings)
+		if status.ExpiredEntries > 0 {
+			value += fmt.Sprintf("; %d expired", status.ExpiredEntries)
+		}
+		if status.NonSuppressibleMatches > 0 {
+			value += fmt.Sprintf("; %d high/critical matches remain open", status.NonSuppressibleMatches)
+		}
+		return value
+	case "source-mismatch":
+		return "not applied: source fingerprint does not match"
+	}
+	return SafeText(status.State)
+}
+
+func capabilityEvidence(locations []model.Location) string {
+	values := make([]string, 0, min(3, len(locations)))
+	for _, location := range locations {
+		value := SafeText(location.Path)
+		if location.Line > 0 {
+			value += fmt.Sprintf(":%d", location.Line)
+		}
+		values = append(values, value)
+		if len(values) == 3 {
+			break
+		}
+	}
+	if len(locations) > len(values) {
+		values = append(values, fmt.Sprintf("+%d", len(locations)-len(values)))
+	}
+	return strings.Join(values, ", ")
+}
+
+func findingDisposition(finding model.Finding, language Language) string {
+	if finding.IsAccepted() {
+		if language == LanguageChinese {
+			return "已接受"
+		}
+		return "ACCEPTED"
+	}
+	if language == LanguageChinese {
+		return "待复核"
+	}
+	return "OPEN"
 }
 
 func writeArchitecture(w io.Writer, root, title, input string) error {

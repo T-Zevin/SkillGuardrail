@@ -35,6 +35,27 @@ func TestTextReport(t *testing.T) {
 	}
 }
 
+func TestTextReportShowsCapabilityEvidenceAndBaseline(t *testing.T) {
+	report := sampleReport()
+	report.Capabilities = []model.Capability{{
+		Name: "destructive_write", Risk: model.SeverityHigh,
+		Evidence: []model.Location{{Path: "SKILL.md", Line: 7}},
+	}}
+	report.Baseline = model.BaselineStatus{State: "applied", AcceptedFindings: 1}
+	report.Findings[0].Disposition = model.FindingAccepted
+	report.Findings[0].AcceptanceReason = "Fixture-only example"
+	report.Finalize()
+	var out bytes.Buffer
+	if err := Write(&out, report, FormatText, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"CAPABILITIES", "SKILL.md:7", "REVIEW BASELINE", "ACCEPTED", "Fixture-only example"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("report missing %q:\n%s", want, out.String())
+		}
+	}
+}
+
 func TestChineseTextReport(t *testing.T) {
 	var out bytes.Buffer
 	if err := WriteLocalized(&out, sampleReport(), FormatText, false, LanguageChinese); err != nil {

@@ -61,6 +61,9 @@ skillguardrail scan ./my-skill -cn
 # 扫描公开 GitHub 仓库
 skillguardrail scan -cn https://github.com/owner/repository
 
+# 扫描多 Skill 仓库中的指定子目录
+skillguardrail scan -cn https://github.com/owner/repository --path skills/literature-review
+
 # 输出 JSON 或 SARIF，供 CI 使用
 skillguardrail scan ./my-skill --format json
 skillguardrail scan ./my-skill --format sarif --output skillguardrail.sarif
@@ -73,6 +76,45 @@ skillguardrail verify skill-name --target codex
 ```
 
 远程来源会先解析为不可变 commit，再下载到私有隔离区。交互终端会显示进度条；网络较慢时可增加 `--timeout 25m`。默认只接受公开 GitHub HTTPS 仓库；根目录有一个 Skill，或仅包含一个嵌套 Skill 时可直接扫描。
+
+`--path` 用于缩小实际审查和安装的 Skill 范围，并将范围写入 receipt；GitHub
+来源仍会先固定到不可变 commit 后获取归档，再进行子目录选择，不会暗中跟随未审查的可变引用。
+
+### 已复核发现基线
+
+baseline 是本地保存、与来源内容指纹绑定的审阅记录，用于接受符合预期的
+**信息 / 低 / 中** 级发现；它不是按规则或路径一刀切忽略。只有包指纹和发现
+键均完全一致时才会生效；高和严重发现始终保持开启状态，不能借此安装。
+
+先输出 JSON 报告，复制已人工复核的包 `fingerprint` 和单条发现的 `key`：
+
+```bash
+skillguardrail scan ./my-skill --format json --output report.json
+```
+
+```json
+{
+  "schema_version": "skillguardrail-baseline/v1",
+  "source_fingerprint": "填入 report.json 的 fingerprint",
+  "accepted_findings": [
+    {
+      "finding_key": "填入一条已复核发现的 key",
+      "reason": "只访问已说明的公开文献 API，未上传本地数据。",
+      "expires_at": "2027-07-31T00:00:00Z"
+    }
+  ]
+}
+```
+
+将该文件存放在待分发 Skill 目录外，并在扫描与受控安装时使用同一份基线：
+
+```bash
+skillguardrail scan ./my-skill --baseline .skillguardrail-baseline.json
+skillguardrail install ./my-skill --target codex --baseline .skillguardrail-baseline.json --yes
+```
+
+发现不会从文本、JSON 或安装 receipt 中消失；已接受项会带 `ACCEPTED` 状态和原因。
+一旦待审查包内容变化，baseline 自动失效。
 
 ## 判定含义
 
@@ -135,6 +177,8 @@ SkillGuardrail 正在建立可复现的公开 Skill 安全基准，覆盖生物�
 | 参数 | 用途 |
 | --- | --- |
 | `-cn` | 中文人类可读报告；可放在来源前或后。 |
+| `--path DIR` | 扫描或安装来源仓库中的一个相对 Skill 目录（或 `SKILL.md`）；报告和 receipt 会记录审查范围。 |
+| `--baseline FILE` | 应用与来源内容绑定的 JSON 审阅基线；仅可接受 Info/Low/Medium 的精确发现。 |
 | `--format text\|json\|sarif` | 文本、机器可读 JSON 或 SARIF。 |
 | `--output PATH` | 将报告写入文件。 |
 | `--fail-on high` | 将 High/critical 作为脚本或 CI 的失败阈值。 |

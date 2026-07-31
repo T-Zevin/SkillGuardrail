@@ -139,6 +139,16 @@ safe, benign, or free of undiscovered behavior.
 
 Accumulated lower-severity findings may raise the verdict. Parser failures, resource-limit violations, unsupported content required for coverage, and other incomplete scans fail closed for installation.
 
+### Reviewed-finding baselines
+
+An optional local baseline is an auditable acknowledgement, not a blanket
+ignore rule. A baseline entry is bound to one complete package fingerprint and
+one deterministic finding key, requires a reason, and may expire. It can only
+acknowledge info/low/medium findings. High and critical findings remain
+non-suppressible, and a content-fingerprint mismatch leaves every finding open.
+The staged installation rescan reapplies the same baseline before enforcing
+policy, so a baseline cannot authorize bytes different from those reviewed.
+
 ## 8. Source retrieval controls
 
 The initial remote-source boundary supports public HTTPS GitHub sources. The intended controls are:

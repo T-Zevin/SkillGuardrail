@@ -241,7 +241,7 @@ func copyLocalSnapshot(ctx context.Context, sourceRoot, destinationRoot string, 
 		if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == "node_modules" || entry.Name() == ".venv") {
 			return filepath.SkipDir
 		}
-		if entry.Name() == ".skillguardrail.lock" {
+		if entry.Name() == ".skillguardrail.lock" || entry.Name() == ".skillguardrail-baseline.json" {
 			return nil
 		}
 		relSlash := filepath.ToSlash(rel)
@@ -348,6 +348,56 @@ func ParseGitHubURL(raw string) (string, string, string, error) {
 	}
 	canonical := "https://github.com/" + owner + "/" + repo
 	return owner, repo, canonical, nil
+}
+
+// SelectSubdirectory constrains a scan to a directory or SKILL.md below an
+// already-quarantined repository root. It never follows a symbolic link and
+// refuses traversal, absolute paths, and paths that escape the snapshot.
+func SelectSubdirectory(root, requested string) (string, string, error) {
+	requested = strings.TrimSpace(strings.ReplaceAll(requested, "\\", "/"))
+	if requested == "" {
+		return "", "", errors.New("skill path must be a non-empty relative directory or SKILL.md path")
+	}
+	requested = strings.TrimPrefix(requested, "./")
+	if requested == "" {
+		requested = "."
+	}
+	for _, segment := range strings.Split(requested, "/") {
+		if segment == ".." {
+			return "", "", errors.New("skill path may not contain parent traversal")
+		}
+	}
+	clean := path.Clean(requested)
+	if clean == ".." || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") {
+		return "", "", errors.New("skill path must stay within the repository")
+	}
+	if clean != "." {
+		for _, segment := range strings.Split(clean, "/") {
+			if segment == "" || segment == "." || segment == ".." {
+				return "", "", errors.New("skill path contains an invalid component")
+			}
+		}
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve repository root: %w", err)
+	}
+	candidate := filepath.Join(rootAbs, filepath.FromSlash(clean))
+	rel, err := filepath.Rel(rootAbs, candidate)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", "", errors.New("skill path escapes the repository")
+	}
+	info, err := os.Lstat(candidate)
+	if err != nil {
+		return "", "", fmt.Errorf("open selected skill path: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || (!info.IsDir() && !info.Mode().IsRegular()) {
+		return "", "", errors.New("selected skill path must be a regular file or directory, not a link or special entry")
+	}
+	if info.Mode().IsRegular() && !strings.EqualFold(filepath.Base(candidate), "SKILL.md") {
+		return "", "", errors.New("a selected file must be named SKILL.md")
+	}
+	return candidate, clean, nil
 }
 
 func resolveGitHub(ctx context.Context, raw string, limits Limits, progress DownloadProgressFunc) (*Resolved, error) {

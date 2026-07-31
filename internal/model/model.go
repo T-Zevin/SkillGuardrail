@@ -64,6 +64,13 @@ const (
 const SafetyClaimNotProvenSafe = "not-proven-safe"
 const RiskScoreMeaningDetectedSignals = "distinct-detected-rule-signals-not-probability"
 
+type FindingDisposition string
+
+const (
+	FindingOpen     FindingDisposition = "open"
+	FindingAccepted FindingDisposition = "accepted"
+)
+
 type Location struct {
 	Path   string `json:"path"`
 	Line   int    `json:"line,omitempty"`
@@ -71,15 +78,22 @@ type Location struct {
 }
 
 type Finding struct {
-	RuleID         string   `json:"rule_id"`
-	Title          string   `json:"title"`
-	Description    string   `json:"description"`
-	Severity       Severity `json:"severity"`
-	Category       string   `json:"category"`
-	Confidence     string   `json:"confidence,omitempty"`
-	Location       Location `json:"location"`
-	Evidence       string   `json:"evidence,omitempty"`
-	Recommendation string   `json:"recommendation,omitempty"`
+	Key              string             `json:"key,omitempty"`
+	RuleID           string             `json:"rule_id"`
+	Title            string             `json:"title"`
+	Description      string             `json:"description"`
+	Severity         Severity           `json:"severity"`
+	Category         string             `json:"category"`
+	Confidence       string             `json:"confidence,omitempty"`
+	Location         Location           `json:"location"`
+	Evidence         string             `json:"evidence,omitempty"`
+	Recommendation   string             `json:"recommendation,omitempty"`
+	Disposition      FindingDisposition `json:"disposition,omitempty"`
+	AcceptanceReason string             `json:"acceptance_reason,omitempty"`
+}
+
+func (f Finding) IsAccepted() bool {
+	return f.Disposition == FindingAccepted
 }
 
 type Capability struct {
@@ -103,6 +117,16 @@ type SourceInfo struct {
 	Repository    string `json:"repository,omitempty"`
 	Commit        string `json:"commit,omitempty"`
 	ArchiveSHA256 string `json:"archive_sha256,omitempty"`
+	SkillPath     string `json:"skill_path,omitempty"`
+}
+
+type BaselineStatus struct {
+	Path                   string `json:"path,omitempty"`
+	State                  string `json:"state,omitempty"`
+	SourceFingerprint      string `json:"source_fingerprint,omitempty"`
+	AcceptedFindings       int    `json:"accepted_findings,omitempty"`
+	ExpiredEntries         int    `json:"expired_entries,omitempty"`
+	NonSuppressibleMatches int    `json:"non_suppressible_matches,omitempty"`
 }
 
 type ScanReport struct {
@@ -126,6 +150,7 @@ type ScanReport struct {
 	Findings         []Finding      `json:"findings"`
 	Capabilities     []Capability   `json:"capabilities"`
 	Stats            map[string]int `json:"stats"`
+	Baseline         BaselineStatus `json:"baseline,omitempty"`
 }
 
 func NewReport(version string, source SourceInfo, root string) ScanReport {
@@ -160,8 +185,13 @@ func (r *ScanReport) Finalize() {
 	r.Highest = SeverityInfo
 	r.Stats = map[string]int{}
 	maxByRule := map[string]Severity{}
-	for _, finding := range r.Findings {
+	for index := range r.Findings {
+		finding := &r.Findings[index]
+		finding.Key = FindingKey(*finding)
 		r.Stats[string(finding.Severity)]++
+		if finding.IsAccepted() {
+			continue
+		}
 		if finding.Severity.Rank() > r.Highest.Rank() {
 			r.Highest = finding.Severity
 		}
@@ -191,6 +221,33 @@ func (r *ScanReport) Finalize() {
 	default:
 		r.Verdict = VerdictPass
 	}
+}
+
+// FindingKey is stable for one finding in one exact content snapshot. It lets
+// a baseline acknowledge an auditable finding without broadly silencing a rule
+// or path after the underlying content changes.
+func FindingKey(f Finding) string {
+	input := strings.Join([]string{
+		f.RuleID,
+		string(f.Severity),
+		f.Category,
+		f.Location.Path,
+		fmt.Sprintf("%d", f.Location.Line),
+		fmt.Sprintf("%d", f.Location.Column),
+		f.Evidence,
+	}, "\x00")
+	sum := sha256.Sum256([]byte(input))
+	return hex.EncodeToString(sum[:])
+}
+
+func (r ScanReport) OpenFindingCount() int {
+	count := 0
+	for _, finding := range r.Findings {
+		if !finding.IsAccepted() {
+			count++
+		}
+	}
+	return count
 }
 
 // CheckInstallPolicy is the single fail-closed installation decision used for

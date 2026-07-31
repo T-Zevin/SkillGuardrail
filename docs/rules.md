@@ -78,3 +78,15 @@ Correlation is intentionally conservative. SkillGuardrail does not upgrade unrel
 ## Evidence handling
 
 Evidence excerpts are bounded, known secret formats are redacted, and terminal control characters are escaped. JSON and SARIF consumers must still treat every path and evidence field as attacker-controlled data.
+
+## Reviewed findings baseline
+
+A local `skillguardrail-baseline/v1` JSON file can mark an exact `info`, `low`,
+or `medium` finding as reviewed. It must bind to the complete package
+fingerprint and the finding SHA-256 `key`; a content change, location change,
+changed evidence, expiry, or severity uplift keeps the finding open.
+
+Baselines never suppress `high` or `critical` findings and therefore cannot
+turn a blocked package into an installable one. Accepted findings remain in
+human reports, JSON/SARIF output, and installation receipts, together with the
+review reason.

@@ -411,7 +411,7 @@ func (s *Scanner) skipEntry(root, path string, entry fs.DirEntry) bool {
 		return false
 	}
 	rel = filepath.ToSlash(rel)
-	return rel == ".skillguardrail.lock" || rel == "skillguardrail.lock"
+	return rel == ".skillguardrail.lock" || rel == "skillguardrail.lock" || rel == ".skillguardrail-baseline.json"
 }
 
 func (s *Scanner) inspectSymlink(state *scanState, path string) {

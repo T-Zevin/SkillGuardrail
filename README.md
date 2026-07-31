@@ -61,6 +61,9 @@ skillguardrail scan ./my-skill
 # Scan a public GitHub repository
 skillguardrail scan https://github.com/owner/repository
 
+# Scan one reviewed Skill inside a multi-Skill repository
+skillguardrail scan https://github.com/owner/repository --path skills/literature-review
+
 # JSON or SARIF for CI
 skillguardrail scan ./my-skill --format json
 skillguardrail scan ./my-skill --format sarif --output skillguardrail.sarif
@@ -73,6 +76,50 @@ skillguardrail verify skill-name --target codex
 ```
 
 Remote sources are resolved to an immutable commit and downloaded into a private quarantine. Interactive terminals show progress; use `--timeout 25m` on slow networks. Public GitHub HTTPS repository roots are supported directly when they contain a root Skill or exactly one nested Skill.
+
+The `--path` selector narrows the inspected and installable Skill scope and records it in the
+receipt. The GitHub archive is still acquired at an immutable commit before
+selection, so no unreviewed mutable reference is silently followed.
+
+### Reviewed findings baseline
+
+A baseline is a local, source-bound review record for expected **Info / Low /
+Medium** findings. It is not a broad rule ignore: it applies only when the
+package fingerprint and finding key both match. High and Critical findings are
+always left open and remain non-installable.
+
+First run a JSON scan and copy the package `fingerprint` plus the specific
+finding `key` you have reviewed:
+
+```bash
+skillguardrail scan ./my-skill --format json --output report.json
+```
+
+```json
+{
+  "schema_version": "skillguardrail-baseline/v1",
+  "source_fingerprint": "copy report.json fingerprint here",
+  "accepted_findings": [
+    {
+      "finding_key": "copy one reviewed finding key here",
+      "reason": "Documented request to a public literature API; no local data is uploaded.",
+      "expires_at": "2027-07-31T00:00:00Z"
+    }
+  ]
+}
+```
+
+Save it outside the distributable Skill tree, then use the same file for
+scanning and guarded installation:
+
+```bash
+skillguardrail scan ./my-skill --baseline .skillguardrail-baseline.json
+skillguardrail install ./my-skill --target codex --baseline .skillguardrail-baseline.json --yes
+```
+
+Every finding remains visible in the text, JSON, and installation receipt. An
+accepted finding is marked `ACCEPTED` with its reason; a changed package makes
+the baseline inapplicable.
 
 ## Verdicts
 
@@ -135,6 +182,8 @@ See the [benchmark method](benchmarks/README.md) and [1,100+ roadmap](benchmarks
 | Option | Purpose |
 | --- | --- |
 | `-cn` | Render the human-readable report in Simplified Chinese. |
+| `--path DIR` | Scan or install one relative Skill directory (or `SKILL.md`) within the source repository. The report and receipt record this scope. |
+| `--baseline FILE` | Apply a source-bound JSON review baseline; only Info/Low/Medium exact findings can be accepted. |
 | `--format text\|json\|sarif` | Text, JSON, or SARIF output. |
 | `--output PATH` | Write the report to a file. |
 | `--fail-on high` | Use High/critical as the failure threshold for scripts or CI. |

@@ -14,6 +14,7 @@ import (
 
 	"github.com/T-Zevin/SkillGuardrail/internal/install"
 	"github.com/T-Zevin/SkillGuardrail/internal/model"
+	"github.com/T-Zevin/SkillGuardrail/internal/policy"
 	"github.com/T-Zevin/SkillGuardrail/internal/progress"
 	"github.com/T-Zevin/SkillGuardrail/internal/report"
 	"github.com/T-Zevin/SkillGuardrail/internal/scanner"
@@ -118,6 +119,8 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	formatValue := flags.String("format", "text", "report format: text, json, or sarif")
 	chinese := flags.Bool("cn", false, "render the human-readable report in Simplified Chinese")
 	output := flags.String("output", "", "write the report to a file")
+	subdirectory := flags.String("path", "", "relative Skill directory or SKILL.md path within the source repository")
+	baselinePath := flags.String("baseline", "", "source-bound accepted-findings baseline JSON")
 	failOnValue := flags.String("fail-on", "medium", "return exit 1 at this severity or higher")
 	timeout := flags.Duration("timeout", 20*time.Minute, "maximum fetch and scan duration")
 	noColor := flags.Bool("no-color", false, "disable ANSI color")
@@ -143,6 +146,11 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	}
 	if flags.NArg() != 1 {
 		flags.Usage()
+		return ExitError
+	}
+	baseline, err := loadBaseline(*baselinePath)
+	if err != nil {
+		fmt.Fprintln(stderr, "skillguardrail: baseline:", report.SafeText(err.Error()))
 		return ExitError
 	}
 	format, err := report.ParseFormat(*formatValue)
@@ -181,12 +189,13 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	config.MaxFileSize = *maxFileSize
 	config.MaxTotalSize = *maxTotalSize
 	engine := scanner.New(config)
-	if selectedRoot, selected, selectErr := engine.SelectSkillRoot(resolved.Root); selectErr != nil {
+	if selectedRoot, skillPath, selected, selectErr := selectScanRoot(engine, resolved.Root, *subdirectory); selectErr != nil {
 		indicator.Fail(labels.scanFailed)
 		fmt.Fprintln(stderr, "skillguardrail: discover skill root:", report.SafeText(selectErr.Error()))
 		return ExitError
 	} else if selected {
 		resolved.Root = selectedRoot
+		resolved.Source.SkillPath = skillPath
 		indicator.Set(35, labels.discover)
 	}
 	scan, err := engine.Scan(ctx, resolved.Root, resolved.Source, version.Version)
@@ -194,6 +203,9 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		indicator.Fail(labels.scanFailed)
 		fmt.Fprintln(stderr, "skillguardrail: scan incomplete:", report.SafeText(err.Error()))
 		return ExitError
+	}
+	if baseline != nil {
+		policy.ApplyBaseline(&scan, *baseline, *baselinePath, time.Now().UTC())
 	}
 	indicator.Set(88, labels.report)
 	incomplete := scan.Fingerprint == ""
@@ -219,7 +231,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "skillguardrail: scan incomplete: no complete-package fingerprint was produced")
 		return ExitError
 	}
-	if len(scan.Findings) > 0 && scan.Highest.Rank() >= failOn.Rank() {
+	if scan.OpenFindingCount() > 0 && scan.Highest.Rank() >= failOn.Rank() {
 		return ExitPolicy
 	}
 	return ExitOK
@@ -236,6 +248,8 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	yes := flags.Bool("yes", false, "confirm the non-interactive installation")
 	replace := flags.Bool("replace", false, "back up and atomically replace an existing skill")
 	stateDir := flags.String("state-dir", "", "private directory for authoritative receipts (advanced)")
+	subdirectory := flags.String("path", "", "relative Skill directory or SKILL.md path within the source repository")
+	baselinePath := flags.String("baseline", "", "source-bound accepted-findings baseline JSON")
 	noColor := flags.Bool("no-color", false, "disable ANSI color")
 	sourceDefaults := source.DefaultLimits()
 	maxArchiveSize := flags.Int64("max-archive-size", sourceDefaults.MaxArchiveBytes, "maximum compressed GitHub archive bytes")
@@ -256,6 +270,11 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	}
 	if flags.NArg() != 1 {
 		flags.Usage()
+		return ExitError
+	}
+	baseline, err := loadBaseline(*baselinePath)
+	if err != nil {
+		fmt.Fprintln(stderr, "skillguardrail: baseline:", report.SafeText(err.Error()))
 		return ExitError
 	}
 	allowed, err := model.ParseSeverity(*allowedValue)
@@ -292,12 +311,13 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	}
 	defer resolved.Cleanup()
 	engine := scanner.New(scanner.DefaultConfig())
-	if selectedRoot, selected, selectErr := engine.SelectSkillRoot(resolved.Root); selectErr != nil {
+	if selectedRoot, skillPath, selected, selectErr := selectScanRoot(engine, resolved.Root, *subdirectory); selectErr != nil {
 		indicator.Fail(labels.scanFailed)
 		fmt.Fprintln(stderr, "skillguardrail: discover skill root:", report.SafeText(selectErr.Error()))
 		return ExitError
 	} else if selected {
 		resolved.Root = selectedRoot
+		resolved.Source.SkillPath = skillPath
 		indicator.Set(35, labels.discover)
 	}
 	indicator.Set(45, labels.scan)
@@ -306,6 +326,9 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 		indicator.Fail(labels.scanFailed)
 		fmt.Fprintln(stderr, "skillguardrail: scan incomplete:", report.SafeText(err.Error()))
 		return ExitError
+	}
+	if baseline != nil {
+		policy.ApplyBaseline(&scan, *baseline, *baselinePath, time.Now().UTC())
 	}
 	indicator.Set(78, labels.report)
 	color := !*noColor && os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != ""
@@ -334,6 +357,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	result, err := install.Install(ctx, resolved.Root, scan, install.Options{
 		Target: *target, Directory: *directory, AllowedRisk: allowed,
 		Replace: *replace, ToolVersion: version.Version, StateDir: *stateDir,
+		Baseline: baseline, BaselinePath: *baselinePath,
 	})
 	if err != nil {
 		indicator.Fail(labels.installFailed)
@@ -350,6 +374,26 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "BACKUP    %s\n", report.SafeText(result.BackupPath))
 	}
 	return ExitOK
+}
+
+func loadBaseline(path string) (*policy.Baseline, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, nil
+	}
+	baseline, err := policy.LoadBaseline(path)
+	if err != nil {
+		return nil, err
+	}
+	return &baseline, nil
+}
+
+func selectScanRoot(engine *scanner.Scanner, root, requestedPath string) (string, string, bool, error) {
+	if strings.TrimSpace(requestedPath) != "" {
+		selected, clean, err := source.SelectSubdirectory(root, requestedPath)
+		return selected, clean, err == nil, err
+	}
+	selected, automatic, err := engine.SelectSkillRoot(root)
+	return selected, "", automatic, err
 }
 
 func runVerify(args []string, stdout, stderr io.Writer) int {

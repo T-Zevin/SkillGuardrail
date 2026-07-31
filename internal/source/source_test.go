@@ -30,6 +30,40 @@ func TestParseGitHubURL(t *testing.T) {
 	}
 }
 
+func TestSelectSubdirectory(t *testing.T) {
+	root := t.TempDir()
+	selected := filepath.Join(root, "skills", "review")
+	if err := os.MkdirAll(selected, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(selected, "SKILL.md"), []byte("safe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, clean, err := SelectSubdirectory(root, "./skills/review")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != selected || clean != "skills/review" {
+		t.Fatalf("selected = %q, clean = %q", got, clean)
+	}
+	got, clean, err = SelectSubdirectory(root, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != root || clean != "." {
+		t.Fatalf("root selection = %q, clean = %q", got, clean)
+	}
+	got, clean, err = SelectSubdirectory(root, "./")
+	if err != nil || got != root || clean != "." {
+		t.Fatalf("./ root selection = %q, clean = %q, err = %v", got, clean, err)
+	}
+	for _, invalid := range []string{"", "../review", "/tmp/review", "skills/../review", "skills/review/other.md"} {
+		if _, _, err := SelectSubdirectory(root, invalid); err == nil {
+			t.Errorf("path %q was accepted", invalid)
+		}
+	}
+}
+
 func TestExtractTarRejectsTraversalAndLinks(t *testing.T) {
 	for name, entry := range map[string]tar.Header{
 		"traversal": {Name: "root/../../outside", Typeflag: tar.TypeReg, Size: 0},
