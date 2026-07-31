@@ -1,147 +1,145 @@
 <h1 align="center">SkillGuardrail</h1>
 
 <p align="center">
-  简体中文 · <a href="README.en.md">English</a>
+  <a href="README.zh-CN.md">简体中文</a> · English
 </p>
 
 <p align="center">
-  <a href="https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml"><img alt="构建" src="https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml/badge.svg?branch=main"></a>
-  <a href="https://github.com/T-Zevin/SkillGuardrail/releases"><img alt="版本" src="https://img.shields.io/github/v/release/T-Zevin/SkillGuardrail?display_name=tag&amp;sort=semver"></a>
-  <a href="https://github.com/T-Zevin/SkillGuardrail/releases"><img alt="下载量" src="https://img.shields.io/github/downloads/T-Zevin/SkillGuardrail/total"></a>
-  <a href="go.mod"><img alt="Go 版本" src="https://img.shields.io/github/go-mod/go-version/T-Zevin/SkillGuardrail?logo=go"></a>
-  <a href="LICENSE"><img alt="许可证" src="https://img.shields.io/github/license/T-Zevin/SkillGuardrail"></a>
-  <a href="#平台支持"><img alt="平台" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-5c6ac4"></a>
+  <a href="https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml"><img alt="Build" src="https://github.com/T-Zevin/SkillGuardrail/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/T-Zevin/SkillGuardrail/releases"><img alt="Release" src="https://img.shields.io/github/v/release/T-Zevin/SkillGuardrail?display_name=tag&amp;sort=semver"></a>
+  <a href="https://github.com/T-Zevin/SkillGuardrail/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/T-Zevin/SkillGuardrail/total"></a>
+  <a href="go.mod"><img alt="Go Version" src="https://img.shields.io/github/go-mod/go-version/T-Zevin/SkillGuardrail?logo=go"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/T-Zevin/SkillGuardrail"></a>
+  <a href="#platform-support"><img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-5c6ac4"></a>
 </p>
 
-![SkillGuardrail：Agent Skills 安全护栏](assets/skillguardrail-hero.png)
+![SkillGuardrail — security guardrails for Agent Skills](assets/skillguardrail-hero.png)
 
-**别把 GitHub 上的 Skill 直接装进 Agent。先隔离、扫描、判定，再安装。**
+**Do not copy a GitHub Skill straight into your agent. Quarantine, scan, decide, then install.**
 
-SkillGuardrail 是面向 Codex、Claude Code、Cursor、Gemini CLI 与 OpenClaw 的开源 Agent Skill 安全护栏：它在不运行包内代码的前提下检查不可信 Skill，输出可解释的策略判定，并将已批准的安装绑定到来源 commit、内容指纹与外部 receipt。
+SkillGuardrail is an open-source pre-install security scanner and guarded installer for Agent Skills used by Codex, Claude Code, Cursor, Gemini CLI, and OpenClaw. It inspects untrusted packages without running package code, produces an explainable policy verdict, and binds approved installs to a source commit, package fingerprint, and external receipt.
 
 > [!IMPORTANT]
-> `PASS` 只代表当前规则未发现已知阻断信号，不是零风险或安全认证。未知来源仍应最小权限、沙箱运行并人工复核。
+> `PASS` means the enabled rules found no known blocking signal. It is not a safety certificate or a zero-risk claim. Keep unknown Skills sandboxed, least-privileged, and human-reviewed.
 
-| 隔离优先 | 策略判定 | 可验证安装 |
+| Quarantine first | Policy verdict | Verifiable installs |
 |:---|:---|:---|
-| 不执行 Skill 脚本、解释器或安装钩子。 | 结合规则信号与能力链给出 `PASS / REVIEW / BLOCK / CRITICAL`。 | 安装后可检查文件是否偏离当时审核的来源与指纹。 |
+| Never execute package scripts, interpreters, or hooks while inspecting. | Combine rule signals and capability chains into `PASS / REVIEW / BLOCK / CRITICAL`. | Detect drift from the source and fingerprint that were reviewed. |
 
-## 为什么需要它？
+## Why SkillGuardrail?
 
-Skill 不只是 Markdown：它可以带入指令、脚本、依赖、网络访问与外部内容。SkillGuardrail 重点检查提示注入、敏感凭据访问、网络外传、远程下载、危险命令、持久化、混淆、二进制，以及“敏感读取 + 外联”“解码 + 执行”等能力链。
+A Skill is more than Markdown: it can introduce instructions, scripts, dependencies, network access, and external content into an agent's trust boundary. SkillGuardrail checks prompt injection, secret access, network egress, remote downloads, dangerous commands, persistence, obfuscation, binaries, and capability chains such as **sensitive read + network egress** or **decode + execute**.
 
 ```text
-不可信来源 → 私有隔离区 → 静态扫描 → 策略判定 → 明确批准 → 原子安装 → 后续验证
+untrusted source → private quarantine → static scan → policy verdict → explicit approval → atomic install → later verification
 ```
 
-完整规则见 [规则目录](docs/rules.md)，安全边界与已知限制见 [威胁模型](docs/threat-model.md)。
+See the [rule catalog](docs/rules.md) and [threat model](docs/threat-model.md) for scope and limitations.
 
-## 安装
+## Install
 
 ```bash
-# Homebrew（macOS / Linux）
+# Homebrew (macOS / Linux)
 brew install T-Zevin/tap/skillguardrail
 
-# 或从源码安装（Go 1.23+）
+# Or source installation (Go 1.23+)
 go install github.com/T-Zevin/SkillGuardrail/cmd/skillguardrail@latest
 ```
 
-也可从 [GitHub Releases](https://github.com/T-Zevin/SkillGuardrail/releases) 下载二进制，并校验 `checksums.txt`。
+Release binaries and `checksums.txt` are available from [GitHub Releases](https://github.com/T-Zevin/SkillGuardrail/releases).
 
-### 平台支持
+### Platform support
 
-macOS、Linux、Windows 均支持扫描和报告。受控 `install` / `verify` 当前在 macOS 与 Linux 启用；Windows 用户可以扫描后手动安装已复核的文件。
+Scanning and reports work on macOS, Linux, and Windows. Guarded `install` and `verify` are currently enabled on macOS and Linux; Windows users can scan first and manually install reviewed files.
 
-## 30 秒上手
+## Quick start
 
 ```bash
-# 扫描本地 Skill
-skillguardrail scan ./my-skill -cn
+# Scan a local Skill
+skillguardrail scan ./my-skill
 
-# 扫描公开 GitHub 仓库
-skillguardrail scan -cn https://github.com/owner/repository
+# Scan a public GitHub repository
+skillguardrail scan https://github.com/owner/repository
 
-# 输出 JSON 或 SARIF，供 CI 使用
+# JSON or SARIF for CI
 skillguardrail scan ./my-skill --format json
 skillguardrail scan ./my-skill --format sarif --output skillguardrail.sarif
 
-# 仅在通过人工确认后受控安装到 Codex
+# Guarded install into Codex after an explicit decision
 skillguardrail install https://github.com/owner/repository --target codex --yes
 
-# 验证已安装 Skill 是否被改动
+# Detect later changes to an installed Skill
 skillguardrail verify skill-name --target codex
 ```
 
-远程来源会先解析为不可变 commit，再下载到私有隔离区。交互终端会显示进度条；网络较慢时可增加 `--timeout 25m`。默认只接受公开 GitHub HTTPS 仓库；根目录有一个 Skill，或仅包含一个嵌套 Skill 时可直接扫描。
+Remote sources are resolved to an immutable commit and downloaded into a private quarantine. Interactive terminals show progress; use `--timeout 25m` on slow networks. Public GitHub HTTPS repository roots are supported directly when they contain a root Skill or exactly one nested Skill.
 
-## 判定含义
+## Verdicts
 
-| 判定 | 含义 | 默认行为 |
+| Verdict | Meaning | Default action |
 | --- | --- | --- |
-| `PASS` | 未发现已知阻断信号；仍需核对来源和能力 | 可继续人工决策 |
-| `REVIEW` | 中风险能力或累计信号需要确认 | 要求明确决定 |
-| `BLOCK` | High 信号或风险阈值达到 | 拒绝受控安装 |
-| `CRITICAL` | 严重行为链或完整性问题 | 始终拒绝 |
+| `PASS` | No known blocking signal; not a zero-risk claim | Continue only after reviewing provenance and capabilities |
+| `REVIEW` | Medium-risk capability or accumulated signals need a decision | Require explicit review |
+| `BLOCK` | A High signal or risk threshold was reached | Refuse guarded installation |
+| `CRITICAL` | A critical behavior chain or integrity failure was found | Always refuse |
 
-风险分数统计的是不同规则信号，**不是**被攻击的概率。扫描不完整时，受控安装会默认失败。
+The score counts distinct detected rule signals. It is **not** a probability of compromise. Guarded installation fails closed when a scan is incomplete.
 
-## 使用案例
+## Usage examples
 
-以下案例扫描公开仓库 [`T-Zevin/cfDNA-skills`](https://github.com/T-Zevin/cfDNA-skills)。截图中的 `PASS` 表示未命中已知阻断信号，不代表该仓库被证明安全。
+The following examples scan [`T-Zevin/cfDNA-skills`](https://github.com/T-Zevin/cfDNA-skills). `PASS` means no known blocking signal matched the enabled rules; it does not prove this repository safe.
 
 ```bash
-skillguardrail scan -cn https://github.com/T-Zevin/cfDNA-skills
+skillguardrail scan https://github.com/T-Zevin/cfDNA-skills
 ```
 
-### 扫描摘要：判定、覆盖率与指纹
+### Summary: verdict, coverage, and fingerprint
 
 <p align="center">
-  <img src="assets/examples/scan-cn-summary.png" alt="中文扫描摘要：cfDNA-skills 通过，已知信号 0/100，内容覆盖 128/128" width="880">
+  <img src="assets/examples/scan-en-summary.png" alt="English scan summary: cfDNA-skills passes with 0 of 100 known signals and 128 of 128 files analyzed" width="960">
 </p>
 
-### 项目结构：工具实际审查了什么
+### Project architecture: what was actually inspected
 
 <p align="center">
-  <img src="assets/examples/scan-cn-tree.png" alt="中文项目结构树：cfDNA-skills 的目录和文件预览" width="820">
+  <img src="assets/examples/scan-en-tree.png" alt="English project architecture tree for cfDNA-skills" width="900">
 </p>
 
-### 多 Skill 仓库：信息提示，不等于恶意
+### Multi-Skill repositories: information, not a malicious verdict
 
 <p align="center">
-  <img src="assets/examples/scan-cn-multi-skill.png" alt="中文发现详情：SG-MAN-004 多 Skill 仓库信息提示" width="880">
+  <img src="assets/examples/scan-en-multi-skill.png" alt="English SG-MAN-004 information finding for a multi-skill repository" width="900">
 </p>
 
-多个嵌套 `SKILL.md` 会触发信息级 `SG-MAN-004`：应分别扫描和安装具体子 Skill，而不应把正常的多 Skill 仓库直接误判为高风险。
+`SG-MAN-004` is informational: scan and install a specific child Skill instead of treating a normal multi-Skill repository as one portable package.
 
-## 1,100+ 跨领域基准计划
+## 1,100+ cross-domain benchmark
 
-SkillGuardrail 正在建立可复现的公开 Skill 安全基准，覆盖生物医学与科研、社科与文献综述、IT/DevOps、机器学习与数据、量化金融和通用自动化。
+SkillGuardrail is building a reproducible public Skill benchmark across biomedical research, social science and literature review, software engineering/DevOps, ML/data, quantitative finance, and professional automation.
 
-- 当前试运行队列：108 个固定 commit 的科研与 cfDNA Skill；
-- 正式目标：至少 1,100 个公开 Skill；
-- 每个非 `PASS` 结果必须人工复核；
-- 报告会按领域和来源仓库分层，绝不把“规则命中”表述为“恶意”。
+- Current pilot: 108 research and cfDNA Skills pinned to exact commits;
+- Release target: at least 1,100 public Skills;
+- Every non-`PASS` result requires a human-review disposition;
+- Reports will be stratified by domain and source repository; a rule hit will never be presented as proof of malicious intent.
 
 <p align="center">
-  <img src="assets/benchmarks/target-allocation.svg" alt="SkillGuardrail 1100 个公开 Agent Skill 的六个领域基准目标构成图；这是计划分配而非扫描结果" width="880">
+  <img src="assets/benchmarks/target-allocation.svg" alt="SkillGuardrail target allocation for 1,100 public Agent Skills across six cohorts; this is a plan, not scan results" width="880">
 </p>
 
-> 图中是锁定基准前的**目标样本分层**，不是已扫描数量、风险命中率或安全评级。完成全部扫描及人工复核后，才会另外发布判定分布、规则频率和误报复核数据。
+> This visual shows the **planned target allocation**, not completed scans, risk prevalence, or a safety rating. Verdict distributions, rule frequencies, and reviewed false-positive data will be published only after the locked corpus has been scanned and reviewed.
 
-查看 [基准方法](benchmarks/README.md) 与 [1,100+ 路线图](benchmarks/ROADMAP.md)。
+See the [benchmark method](benchmarks/README.md) and [1,100+ roadmap](benchmarks/ROADMAP.md).
 
-## 常用参数
+## Common options
 
-| 参数 | 用途 |
+| Option | Purpose |
 | --- | --- |
-| `-cn` | 中文人类可读报告；可放在来源前或后。 |
-| `--format text\|json\|sarif` | 文本、机器可读 JSON 或 SARIF。 |
-| `--output PATH` | 将报告写入文件。 |
-| `--fail-on high` | 将 High/critical 作为脚本或 CI 的失败阈值。 |
-| `--timeout 25m` | 为慢速 GitHub 下载延长总超时。 |
-| `--no-color` | 仅用于日志或 CI 的纯文本输出。 |
-
-完整参数请运行：
+| `-cn` | Render the human-readable report in Simplified Chinese. |
+| `--format text\|json\|sarif` | Text, JSON, or SARIF output. |
+| `--output PATH` | Write the report to a file. |
+| `--fail-on high` | Use High/critical as the failure threshold for scripts or CI. |
+| `--timeout 25m` | Extend the overall timeout for slow GitHub transfers. |
+| `--no-color` | Use plain text for logs or CI. |
 
 ```bash
 skillguardrail --help
@@ -150,8 +148,8 @@ skillguardrail install --help
 skillguardrail verify --help
 ```
 
-## 相关工作与许可证
+## Related work and license
 
-本项目是独立实现，设计参考 [NVIDIA SkillSpector](https://github.com/NVIDIA/SkillSpector)、[Cisco AI Defense Skill Scanner](https://github.com/cisco-ai-defense/skill-scanner)、[Agent Skills 规范](https://agentskills.io/specification)与 [OWASP Agentic Skills Top 10](https://owasp.org/www-project-agentic-skills-top-10/)，不代表上述项目的认证或背书。
+SkillGuardrail is an independent implementation informed by [NVIDIA SkillSpector](https://github.com/NVIDIA/SkillSpector), [Cisco AI Defense Skill Scanner](https://github.com/cisco-ai-defense/skill-scanner), the [Agent Skills specification](https://agentskills.io/specification), and the [OWASP Agentic Skills Top 10](https://owasp.org/www-project-agentic-skills-top-10/). No endorsement is implied.
 
-基于 [Apache License 2.0](LICENSE) 发布。
+Licensed under [Apache License 2.0](LICENSE).
