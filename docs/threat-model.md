@@ -119,7 +119,7 @@ SkillGuardrail also derives capabilities such as:
 
 The portable Agent Skills specification requires `name` and `description`; fields such as `allowed-tools` are optional or platform-specific. SkillGuardrail therefore infers capabilities from package content rather than assuming that every skill contains a complete permission manifest. Declaration-to-behavior checks apply only when a relevant field is present. Because agents may load `name` and `description` into a startup catalog before reading the full skill, those fields receive prompt-injection and overly broad activation checks as part of the pre-load boundary.
 
-Capabilities matter in combination. For example, a networking helper and a credential reader may each have legitimate uses in isolation, while `sensitive_read + network_egress` is a critical exfiltration chain. Other critical chains include `external_instruction + dynamic_exec`, `decode + execute`, and `system_write + execute`.
+Capabilities matter in combination. For example, a networking helper and a credential reader may each have legitimate uses in isolation, while `sensitive_read + network_egress` is a critical exfiltration chain. Other critical chains include `external_instruction + dynamic_exec`, `decode + execute`, `remote_download + local_interpreter_execution`, and `system_write + execute`.
 
 The report's `risk_score` is a bounded heuristic for detected rule signals. It is
 not a probability of compromise, and a score of `0` does not mean zero risk.

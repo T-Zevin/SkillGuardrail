@@ -177,7 +177,7 @@ SkillGuardrail 正在建立可复现的公开 Skill 安全基准，覆盖生物�
 | 参数 | 用途 |
 | --- | --- |
 | `-cn` | 中文人类可读报告；可放在来源前或后。 |
-| `--path DIR` | 扫描或安装来源仓库中的一个相对 Skill 目录（或 `SKILL.md`）；报告和 receipt 会记录审查范围。 |
+| `--path DIR` | 扫描或安装来源仓库中的一个相对 Skill 目录；如传入 `SKILL.md`，会自动定位其所在目录，确保辅助文件也被审查和安装；报告和 receipt 会记录审查范围。 |
 | `--baseline FILE` | 应用与来源内容绑定的 JSON 审阅基线；仅可接受 Info/Low/Medium 的精确发现。 |
 | `--format text\|json\|sarif` | 文本、机器可读 JSON 或 SARIF。 |
 | `--output PATH` | 将报告写入文件。 |

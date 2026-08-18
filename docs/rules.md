@@ -1,6 +1,6 @@
 # Built-in rule catalog
 
-This catalog documents the deterministic rules shipped in the initial `builtin-v1` rule pack. Rule matches are evidence for review, not proof of malicious intent. Critical behavior chains and incomplete scan boundaries fail closed for installation.
+This catalog documents the deterministic rules shipped in the `builtin-v2` rule pack. Rule matches are evidence for review, not proof of malicious intent. Critical behavior chains and incomplete scan boundaries fail closed for installation.
 
 ## Package and manifest integrity
 
@@ -72,8 +72,9 @@ Remote archives are also rejected before scanning when they contain traversal pa
 | Rule | Severity | Meaning |
 | --- | --- | --- |
 | `SG-CHAIN-001` | Critical | A single operation combines sensitive local data access with outbound transfer |
+| `SG-CHAIN-002` | Critical | A remote file is written to a fixed local path and later passed to an interpreter in the same reviewed file |
 
-Correlation is intentionally conservative. SkillGuardrail does not upgrade unrelated keywords found in different files into a critical chain. This reduces the package-wide co-occurrence false positives common in simple regex scanners.
+Correlation is intentionally conservative. `SG-CHAIN-002` requires a literal `curl`/`wget` HTTP(S) download output path and a later matching literal interpreter path in the same reviewed file; dynamic shell variables are not guessed. SkillGuardrail does not upgrade unrelated keywords found in different files into a critical chain. This reduces the package-wide co-occurrence false positives common in simple regex scanners.
 
 ## Evidence handling
 

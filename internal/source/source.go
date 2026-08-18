@@ -350,9 +350,11 @@ func ParseGitHubURL(raw string) (string, string, string, error) {
 	return owner, repo, canonical, nil
 }
 
-// SelectSubdirectory constrains a scan to a directory or SKILL.md below an
-// already-quarantined repository root. It never follows a symbolic link and
-// refuses traversal, absolute paths, and paths that escape the snapshot.
+// SelectSubdirectory constrains a scan to a Skill directory below an
+// already-quarantined repository root. A selected SKILL.md resolves to its
+// containing directory so every support file is reviewed and installed with
+// the manifest. It never follows a symbolic link and refuses traversal,
+// absolute paths, and paths that escape the snapshot.
 func SelectSubdirectory(root, requested string) (string, string, error) {
 	requested = strings.TrimSpace(strings.ReplaceAll(requested, "\\", "/"))
 	if requested == "" {
@@ -394,8 +396,11 @@ func SelectSubdirectory(root, requested string) (string, string, error) {
 	if info.Mode()&os.ModeSymlink != 0 || (!info.IsDir() && !info.Mode().IsRegular()) {
 		return "", "", errors.New("selected skill path must be a regular file or directory, not a link or special entry")
 	}
-	if info.Mode().IsRegular() && !strings.EqualFold(filepath.Base(candidate), "SKILL.md") {
-		return "", "", errors.New("a selected file must be named SKILL.md")
+	if info.Mode().IsRegular() {
+		if !strings.EqualFold(filepath.Base(candidate), "SKILL.md") {
+			return "", "", errors.New("a selected file must be named SKILL.md")
+		}
+		return filepath.Dir(candidate), path.Dir(clean), nil
 	}
 	return candidate, clean, nil
 }

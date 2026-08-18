@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/T-Zevin/SkillGuardrail/internal/model"
@@ -24,6 +25,9 @@ func TestInstallVerifyAndDetectChange(t *testing.T) {
 	result, err := Install(context.Background(), root, report, Options{Directory: target, AllowedRisk: model.SeverityMedium, ToolVersion: "test", StateDir: stateDir})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if result.Lock.RulePack != "builtin-v2" {
+		t.Fatalf("rule pack = %q, want builtin-v2", result.Lock.RulePack)
 	}
 	verification, err := VerifyWithState(result.Path, stateDir)
 	if err != nil {
@@ -64,6 +68,25 @@ func TestInstallCreatesMissingTargetRoot(t *testing.T) {
 	}
 	if result.Path != filepath.Join(canonicalTarget, "safe-summary") {
 		t.Fatalf("installed path = %q", result.Path)
+	}
+}
+
+func TestInstallRejectsSingleManifestFile(t *testing.T) {
+	requireGuardedOperations(t)
+	root := t.TempDir()
+	manifest := filepath.Join(root, "SKILL.md")
+	if err := os.WriteFile(manifest, []byte("---\nname: manifest-only\ndescription: A test skill.\n---\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := scanner.Scan(context.Background(), manifest, model.SourceInfo{Input: manifest, Kind: "local", Resolved: manifest}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = Install(context.Background(), manifest, report, Options{
+		Directory: t.TempDir(), AllowedRisk: model.SeverityMedium, ToolVersion: "test", StateDir: privateTempDir(t),
+	})
+	if err == nil || !strings.Contains(err.Error(), "requires a Skill directory") {
+		t.Fatalf("single manifest install error = %v", err)
 	}
 }
 

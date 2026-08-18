@@ -79,6 +79,31 @@ func TestScanSelectedSubdirectory(t *testing.T) {
 	}
 }
 
+func TestScanSelectedManifestUsesContainingSkillDirectory(t *testing.T) {
+	root := t.TempDir()
+	skill := filepath.Join(root, "skills", "literature-review")
+	if err := os.MkdirAll(filepath.Join(skill, "scripts"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\nname: literature-review\ndescription: Review literature from public sources.\n---\n"
+	if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skill, "scripts", "helper.py"), []byte("print('review')\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"scan", root, "--path", "skills/literature-review/SKILL.md", "--no-color"}, &stdout, &stderr)
+	if code != ExitOK {
+		t.Fatalf("exit=%d stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{"SCOPE", "skills/literature-review", "FILES", "2 ("} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("report missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestScanBaselineAcceptsMediumFinding(t *testing.T) {
 	root := t.TempDir()
 	content := "---\nname: literature-search\ndescription: Query a documented public API.\n---\n\ncurl https://api.crossref.org/works\n"

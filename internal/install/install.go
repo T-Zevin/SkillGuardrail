@@ -98,6 +98,13 @@ func Install(ctx context.Context, root string, report model.ScanReport, options 
 	if err := platformGuardedOperationsAvailable(); err != nil {
 		return Result{}, err
 	}
+	rootInfo, err := os.Lstat(root)
+	if err != nil {
+		return Result{}, fmt.Errorf("inspect reviewed Skill directory: %w", err)
+	}
+	if rootInfo.Mode()&os.ModeSymlink != 0 || !rootInfo.IsDir() {
+		return Result{}, errors.New("guarded installation requires a Skill directory; select the directory containing SKILL.md")
+	}
 	if options.AllowedRisk == "" {
 		options.AllowedRisk = model.SeverityMedium
 	}
@@ -200,7 +207,7 @@ func Install(ctx context.Context, root string, report model.ScanReport, options 
 	lock := model.LockFile{
 		SchemaVersion:    model.SchemaVersion,
 		ToolVersion:      options.ToolVersion,
-		RulePack:         "builtin-v1",
+		RulePack:         "builtin-v2",
 		InstalledAt:      time.Now().UTC(),
 		InstalledPath:    destination,
 		Source:           report.Source,

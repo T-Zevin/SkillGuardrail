@@ -46,6 +46,10 @@ func TestSelectSubdirectory(t *testing.T) {
 	if got != selected || clean != "skills/review" {
 		t.Fatalf("selected = %q, clean = %q", got, clean)
 	}
+	got, clean, err = SelectSubdirectory(root, "skills/review/SKILL.md")
+	if err != nil || got != selected || clean != "skills/review" {
+		t.Fatalf("manifest selection = %q, clean = %q, err = %v", got, clean, err)
+	}
 	got, clean, err = SelectSubdirectory(root, ".")
 	if err != nil {
 		t.Fatal(err)

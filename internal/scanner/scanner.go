@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -34,6 +35,14 @@ const (
 )
 
 var errByteLimitExceeded = errors.New("byte limit exceeded")
+
+type remoteDownload struct {
+	line int
+}
+
+var remoteDownloadCommand = regexp.MustCompile(`(?i)\b(?:curl|wget)\b[^\r\n]{0,480}\bhttps?://`)
+var remoteDownloadOutput = regexp.MustCompile(`(?i)(?:^|\s)(?:-o|--output)(?:\s+|=)["']?([A-Za-z0-9._/~+-]+)`)
+var localInterpreterExecution = regexp.MustCompile(`(?i)(?:^\s*|[;|&]\s*)(?:sudo\s+)?(?:bash|sh|zsh|fish|python(?:3)?|perl|ruby)\s+["']?([A-Za-z0-9._/~+-]+)`)
 
 // Config bounds the amount of untrusted input the scanner will inspect.
 // Ignored directories are skipped by name at any depth.
@@ -450,6 +459,7 @@ func (state *scanState) inspectText(ctx context.Context, path string, data []byt
 	rel := state.relative(path)
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	scanner.Buffer(make([]byte, 64*1024), len(data)+1)
+	downloads := map[string]remoteDownload{}
 	lineNo := 0
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
@@ -502,11 +512,85 @@ func (state *scanState) inspectText(ctx context.Context, path string, data []byt
 				return nil
 			}
 		}
+		for _, target := range remoteDownloadedPaths(line) {
+			downloads[target] = remoteDownload{line: lineNo}
+		}
+		for _, target := range executedScriptPaths(line) {
+			if download, ok := downloads[target]; ok {
+				state.addFinding(model.Finding{
+					RuleID: "SG-CHAIN-002", Title: "Remote download followed by local execution", Description: "A remotely fetched file is later passed to an interpreter without an inspection or integrity boundary.",
+					Severity: model.SeverityCritical, Category: "behavior-chain", Confidence: "high",
+					Location:       model.Location{Path: rel, Line: lineNo, Column: firstColumn(line, target)},
+					Evidence:       fmt.Sprintf("remote-download-line=%d; executed-path=%s", download.line, target),
+					Recommendation: "Vendor and review the script, or verify an immutable checksum before a separately approved execution step.",
+				})
+				if state.halted {
+					return nil
+				}
+			}
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		return err
 	}
 	return ctx.Err()
+}
+
+// remoteDownloadedPaths extracts fixed output paths from a curl/wget command
+// that also contains an HTTP(S) source. Dynamic shell expressions are left
+// alone rather than guessed, keeping this correlation high-confidence.
+func remoteDownloadedPaths(line string) []string {
+	if !remoteDownloadCommand.MatchString(line) {
+		return nil
+	}
+	matches := remoteDownloadOutput.FindAllStringSubmatch(line, -1)
+	paths := make([]string, 0, len(matches))
+	seen := map[string]struct{}{}
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		if target, ok := normalizedScriptPath(match[1]); ok {
+			if _, duplicate := seen[target]; !duplicate {
+				seen[target] = struct{}{}
+				paths = append(paths, target)
+			}
+		}
+	}
+	return paths
+}
+
+// executedScriptPaths extracts a literal script path passed to a supported
+// interpreter. It deliberately excludes shell variables and flags because a
+// static scanner cannot prove their runtime values.
+func executedScriptPaths(line string) []string {
+	matches := localInterpreterExecution.FindAllStringSubmatch(line, -1)
+	paths := make([]string, 0, len(matches))
+	seen := map[string]struct{}{}
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		if target, ok := normalizedScriptPath(match[1]); ok {
+			if _, duplicate := seen[target]; !duplicate {
+				seen[target] = struct{}{}
+				paths = append(paths, target)
+			}
+		}
+	}
+	return paths
+}
+
+func normalizedScriptPath(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.HasPrefix(value, "-") || strings.ContainsAny(value, "$`*?[]{}\\") {
+		return "", false
+	}
+	clean := filepath.ToSlash(filepath.Clean(value))
+	if clean == "." || strings.HasPrefix(clean, "//") {
+		return "", false
+	}
+	return strings.TrimPrefix(clean, "./"), true
 }
 
 func contextualRuleSeverity(rule rule, path string) model.Severity {

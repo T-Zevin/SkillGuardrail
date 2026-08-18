@@ -182,7 +182,7 @@ See the [benchmark method](benchmarks/README.md) and [1,100+ roadmap](benchmarks
 | Option | Purpose |
 | --- | --- |
 | `-cn` | Render the human-readable report in Simplified Chinese. |
-| `--path DIR` | Scan or install one relative Skill directory (or `SKILL.md`) within the source repository. The report and receipt record this scope. |
+| `--path DIR` | Scan or install one relative Skill directory within the source repository. A `SKILL.md` path resolves to its containing directory, so supporting files are reviewed and installed too. The report and receipt record this scope. |
 | `--baseline FILE` | Apply a source-bound JSON review baseline; only Info/Low/Medium exact findings can be accepted. |
 | `--format text\|json\|sarif` | Text, JSON, or SARIF output. |
 | `--output PATH` | Write the report to a file. |
